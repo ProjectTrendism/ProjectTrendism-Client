@@ -1,5 +1,12 @@
 fileFormatVersion: 2
 guid: ddc9723338de5cd4398665614e1955ad
+AssetOrigin:
+  serializedVersion: 1
+  productId: 371120
+  packageName: 2D Simple Cute Characters Pack
+  packageVersion: 1.0.0
+  assetPath: Assets/Jovial Games/2D Simple Cute Characters/Inkscape_Source/2D_Simple_Cute_Characters_Source.svg
+  uploadId: 892576
 ScriptedImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -51,10 +58,3 @@ ScriptedImporter:
       height: 0
     SpriteID: 
     PhysicsOutlines: []
-AssetOrigin:
-  serializedVersion: 1
-  productId: 371120
-  packageName: 2D Simple Cute Characters Pack
-  packageVersion: 1.0.0
-  assetPath: Assets/Jovial Games/2D Simple Cute Characters/Inkscape_Source/2D_Simple_Cute_Characters_Source.svg
-  uploadId: 892576

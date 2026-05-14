@@ -95,12 +95,21 @@ public class KeywordManager : MonoBehaviour
 
 void LoadLocalKeywords()
 {
-    string[] names = { "엘프 버섯", "고블린 가죽", "드워프 강철", "차가운", "빈티지한", "MZ감성", "럭셔리", "힐링" };
-    KeywordType[] types = {
-        KeywordType.Base, KeywordType.Base, KeywordType.Base,
-        KeywordType.Style, KeywordType.Style,
-        KeywordType.Concept, KeywordType.Concept, KeywordType.Concept
+    string[] names =
+    {
+        "엘프 버섯", "고블린 가죽", "드워프 강철", "사과", "체리", "배", "복숭아", "포도", "우유", "양털",
+        "차가운", "빈티지", "빈티지한", "신선한", "바삭한", "포근한",
+        "MZ감성", "럭셔리", "힐링", "가성비", "달빛"
     };
+
+    KeywordType[] types =
+    {
+        KeywordType.Base, KeywordType.Base, KeywordType.Base, KeywordType.Base, KeywordType.Base, KeywordType.Base, KeywordType.Base, KeywordType.Base, KeywordType.Base, KeywordType.Base,
+        KeywordType.Style, KeywordType.Style, KeywordType.Style, KeywordType.Style, KeywordType.Style, KeywordType.Style,
+        KeywordType.Concept, KeywordType.Concept, KeywordType.Concept, KeywordType.Concept, KeywordType.Concept
+    };
+
+    masterKeywords.Clear();
 
     for (int i = 0; i < names.Length; i++)
     {
@@ -112,37 +121,48 @@ void LoadLocalKeywords()
         data.stability = 10;
         masterKeywords.Add(data);
     }
-    Debug.Log("로컬 키워드 8개 로드 완료!");
+
+    Debug.Log("로컬 키워드 " + masterKeywords.Count + "개 로드 완료!");
 }
 
     // 탐험에서 키워드 획득 시 호출
     public void AddKeyword(int serverId, string name, KeywordType type)
+{
+    if (string.IsNullOrEmpty(name))
     {
-        // 이미 있으면 수량만 증가
-        KeywordData existing = playerKeywords.Find(k => k.serverId == serverId);
-        if (existing != null)
-        {
-            Debug.Log("키워드 추가 획득: " + name);
-            UpdateKeywordUI();
-            return;
-        }
-
-        // 마스터에서 찾아서 추가
-        KeywordData master = masterKeywords.Find(k => k.serverId == serverId);
-        if (master != null)
-        {
-            playerKeywords.Add(master);
-        }
-        else
-        {
-            KeywordData data = new KeywordData(name, type);
-            data.serverId = serverId;
-            playerKeywords.Add(data);
-        }
-
-        UpdateKeywordUI();
-        Debug.Log("키워드 획득: " + name);
+        Debug.LogWarning("이름이 없는 키워드는 추가하지 않습니다.");
+        return;
     }
+
+    // 이름 기준으로 중복 확인
+    KeywordData existing = playerKeywords.Find(k => k.keywordName == name);
+
+    if (existing != null)
+    {
+        Debug.Log("이미 보유한 키워드 다시 획득: " + name);
+        UpdateKeywordUI();
+        return;
+    }
+
+    KeywordData master = GetMasterKeywordByName(name);
+
+    if (master != null)
+    {
+        playerKeywords.Add(master);
+    }
+    else
+    {
+        KeywordData data = new KeywordData(name, type);
+
+        // serverId가 0이면 이름 기반 임시 ID 부여
+        data.serverId = serverId != 0 ? serverId : Mathf.Abs(name.GetHashCode());
+
+        playerKeywords.Add(data);
+    }
+
+    UpdateKeywordUI();
+    Debug.Log("키워드 획득: " + name);
+}
 
     // serverId로 마스터 키워드 찾기 (NPC 드랍 시 사용)
     public KeywordData GetMasterKeyword(int serverId)

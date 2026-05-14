@@ -23,7 +23,10 @@ public class ScanHintObject : MonoBehaviour
                 sourceNPC = gameObject.name,
                 zoneName = "Hidden",
                 relatedKeyword = relatedKeyword,
-                isRareHint = true
+                isRareHint = true,
+                reliability = 90,
+                trendWeight = 3,
+                rumorType = "스캔 힌트"
             };
 
             RumorManager.Instance.AddRumor(data);
