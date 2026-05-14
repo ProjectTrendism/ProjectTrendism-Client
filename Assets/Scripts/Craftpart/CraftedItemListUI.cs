@@ -33,7 +33,17 @@ public class CraftedItemListUI : MonoBehaviour
 
         for (int i = 0; i < items.Count; i++)
         {
-            text += "- " + items[i].itemName + " / " + items[i].grade + " / " + items[i].finalPrice + "G\n";
+            string correctionText = "";
+
+            if (items[i].isCorrected)
+            {
+                correctionText = " / " + items[i].correctionType;
+            }
+
+            text += "- " + items[i].itemName +
+                    " / " + items[i].grade +
+                    " / " + items[i].finalPrice + "G" +
+                    correctionText + "\n";
         }
 
         craftedItemListText.text = text;
