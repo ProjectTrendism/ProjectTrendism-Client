@@ -27,12 +27,32 @@ public class SellSceneBinder : MonoBehaviour
     [Header("정산 패널 UI")]
     public SettlementPanelUI settlementPanelUI;
 
+    [Header("큰 정산 패널")]
+    public Button openSettlementButton;
+    public SettlementFullPanelUI settlementFullPanelUI;
+
     [Header("버튼들")]
     public Button sellButton;
     public Button discountSellButton;
     public Button nextTickButton;
     public Button backToCraftButton;
 
+    [Header("가격 조정 버튼")]
+    public Button priceDownButton;
+    public Button priceResetButton;
+    public Button priceUpButton;
+
+    [Header("고객 몰림도 UI")]
+    public Slider crowdSlider;
+    public TextMeshProUGUI crowdValueText;
+    public Image[] customerIcons;
+
+    [Header("판매 결과 분석 UI")]
+    public SalesFeedbackUI salesFeedbackUI;
+
+    [Header("SNS 홍보 스튜디오")]
+    public Button openSNSStudioButton;
+    public SNSPromotionStudioUI snsPromotionStudioUI;
     private void Start()
     {
         SellManager sellManager = SellManager.Instance;
@@ -54,6 +74,12 @@ public class SellSceneBinder : MonoBehaviour
         sellManager.summaryText = summaryText;
         sellManager.promotionPanelUI = promotionPanelUI;
         sellManager.settlementPanelUI = settlementPanelUI;
+        sellManager.crowdSlider = crowdSlider;
+        sellManager.crowdValueText = crowdValueText;
+        sellManager.customerIcons = customerIcons;
+        sellManager.salesFeedbackUI = salesFeedbackUI;
+        sellManager.snsPromotionStudioUI = snsPromotionStudioUI;
+        sellManager.settlementFullPanelUI = settlementFullPanelUI;
 
         BindButtons(sellManager);
         sellManager.OnEnterSellScene();
@@ -89,6 +115,35 @@ public class SellSceneBinder : MonoBehaviour
         {
             promotionPanelUI.promoteButton.onClick.RemoveAllListeners();
             promotionPanelUI.promoteButton.onClick.AddListener(sellManager.OnClickPromote);
+        }
+
+        if (priceDownButton != null)
+        {
+            priceDownButton.onClick.RemoveAllListeners();
+            priceDownButton.onClick.AddListener(sellManager.OnClickPriceDown);
+        }
+
+        if (priceResetButton != null)
+        {
+            priceResetButton.onClick.RemoveAllListeners();
+            priceResetButton.onClick.AddListener(sellManager.OnClickPriceReset);
+        }
+
+        if (priceUpButton != null)
+        {
+            priceUpButton.onClick.RemoveAllListeners();
+            priceUpButton.onClick.AddListener(sellManager.OnClickPriceUp);
+        }
+        if (openSNSStudioButton != null)
+        {
+            openSNSStudioButton.onClick.RemoveAllListeners();
+            openSNSStudioButton.onClick.AddListener(sellManager.OpenSNSPromotionStudio);
+
+        }
+        if (openSettlementButton != null)
+        {
+            openSettlementButton.onClick.RemoveAllListeners();
+            openSettlementButton.onClick.AddListener(sellManager.OpenSettlementFullPanel);
         }
     }
 }

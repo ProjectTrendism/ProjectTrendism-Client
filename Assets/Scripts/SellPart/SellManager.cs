@@ -35,6 +35,20 @@ public class SellManager : MonoBehaviour
     [Header("유행 슬라이더")]
     public Slider trendSlider;
 
+    [Header("고객 몰림도 UI")]
+    public Slider crowdSlider;
+    public TextMeshProUGUI crowdValueText;
+    public Image[] customerIcons;
+
+    [Header("판매 결과 분석 UI")]
+    public SalesFeedbackUI salesFeedbackUI;
+
+    [Header("SNS 홍보 스튜디오")]
+    public SNSPromotionStudioUI snsPromotionStudioUI;
+
+    [Header("큰 정산 패널")]
+    public SettlementFullPanelUI settlementFullPanelUI;
+
     [Header("플레이어 골드")]
     public int currentGold = 0;
 
@@ -60,7 +74,11 @@ public class SellManager : MonoBehaviour
      [HideInInspector] 
      public PromotionPanelUI promotionPanelUI;
 
-    [HideInInspector] public SettlementPanelUI settlementPanelUI; 
+     public TextMeshProUGUI marketStatusText;
+
+    [HideInInspector] public SettlementPanelUI settlementPanelUI;
+    
+
 
     private void Awake()
     {
@@ -162,12 +180,15 @@ public class SellManager : MonoBehaviour
         return Mathf.Clamp(value, 0f, 100f);
     }
 
-    int CalculateCurrentPrice(SellableItemData item)
+   int CalculateCurrentPrice(SellableItemData item)
     {
         if (item == null || item.craftedItem == null)
             return 0;
 
-        float trendMultiplier = 0.7f + (item.trendValue / 100f); 
+        if (item.useManualPrice)
+            return Mathf.Max(1, item.manualPrice);
+
+        float trendMultiplier = 0.7f + (item.trendValue / 100f);
         float lifePenalty = 1f;
 
         if (item.lifeTurns <= 2)
@@ -178,10 +199,171 @@ public class SellManager : MonoBehaviour
         float finalValue = item.craftedItem.finalPrice * trendMultiplier * lifePenalty;
         return Mathf.Max(1, Mathf.RoundToInt(finalValue));
     }
+
     int CalculateDiscountPrice(SellableItemData item)
     {
         int normalPrice = CalculateCurrentPrice(item);
         return Mathf.Max(1, Mathf.RoundToInt(normalPrice * 0.7f));
+    }
+
+    void UpdateSalesPrediction(SellableItemData item)
+    {
+        if (item == null || item.craftedItem == null)
+            return;
+
+        CraftedItemResult crafted = item.craftedItem;
+        int currentPrice = CalculateCurrentPrice(item);
+
+        float crowd = 0f;
+
+        crowd += item.trendValue * 0.45f;
+        crowd += crafted.popularityScore * 0.25f;
+        crowd += crafted.freshnessScore * 0.15f;
+        crowd += crafted.stabilityScore * 0.10f;
+
+        if (crafted.grade == "S")
+            crowd += 12f;
+        else if (crafted.grade == "A")
+            crowd += 8f;
+        else if (crafted.grade == "B")
+            crowd += 4f;
+
+        if (crafted.aiBonus > 0)
+            crowd += 5f;
+
+        if (crafted.isCorrected)
+            crowd += 3f;
+
+        if (item.lifeTurns <= 2)
+            crowd -= 15f;
+        else if (item.lifeTurns <= 4)
+            crowd -= 6f;
+
+        crowd += item.lastPromotionBoost * 0.8f;
+
+        crowd = Mathf.Clamp(crowd, 0f, 100f);
+        item.crowdLevel = crowd;
+
+        float priceRatio = 1f;
+
+        if (crafted.finalPrice > 0)
+            priceRatio = (float)currentPrice / crafted.finalPrice;
+
+        if (priceRatio <= 0.8f)
+            item.priceEvaluation = "저렴함";
+        else if (priceRatio <= 1.2f)
+            item.priceEvaluation = "적정";
+        else if (priceRatio <= 1.5f)
+            item.priceEvaluation = "비쌈";
+        else
+            item.priceEvaluation = "너무 비쌈";
+
+        // 가격이 너무 높으면 실제 고객 몰림도도 떨어지게 보정
+        if (item.priceEvaluation == "저렴함")
+        {
+            crowd += 5f;
+        }
+        else if (item.priceEvaluation == "비쌈")
+        {
+            crowd -= 8f;
+        }
+        else if (item.priceEvaluation == "너무 비쌈")
+        {
+            crowd -= 18f;
+        }
+
+        crowd = Mathf.Clamp(crowd, 0f, 100f);
+        item.crowdLevel = crowd;
+
+        float chance = 25f;
+
+        // 고객 몰림도 반영
+        chance += crowd * 0.55f;
+
+        // 가격 평가 반영
+        if (item.priceEvaluation == "저렴함")
+            chance += 25f;
+        else if (item.priceEvaluation == "적정")
+            chance += 18f;
+        else if (item.priceEvaluation == "비쌈")
+            chance -= 5f;
+        else if (item.priceEvaluation == "너무 비쌈")
+            chance -= 22f;
+
+        // 상품 등급 보정
+        if (crafted.grade == "S")
+            chance += 12f;
+        else if (crafted.grade == "A")
+            chance += 8f;
+        else if (crafted.grade == "B")
+            chance += 4f;
+
+        // 유행 수명이 너무 적으면 패널티
+        if (item.lifeTurns <= 1)
+            chance -= 15f;
+        else if (item.lifeTurns <= 2)
+            chance -= 8f;
+
+        // 재고 없으면 0
+        if (item.stock <= 0)
+            chance = 0f;
+
+        // 너무 자주 실패하지 않게 최소 보장
+        if (item.stock > 0)
+            chance = Mathf.Max(chance, 20f);
+
+        item.expectedSellChance = Mathf.Clamp(chance, 0f, 95f);
+
+        item.riskMessage = GetSalesRiskMessage(item);
+        item.recommendationMessage = GetSalesRecommendationMessage(item);
+    }
+
+    string GetSalesRiskMessage(SellableItemData item)
+    {
+        if (item == null || item.craftedItem == null)
+            return "-";
+
+        CraftedItemResult crafted = item.craftedItem;
+
+        if (item.lifeTurns <= 1)
+            return "유행 수명이 거의 끝났습니다.";
+
+        if (crafted.stabilityScore < 30 && crafted.freshnessScore >= 50)
+            return "화제성은 있지만 유행이 빨리 식을 수 있습니다.";
+
+        if (crafted.popularityScore < 30)
+            return "대중성이 낮아 구매층이 좁습니다.";
+
+        if (item.priceEvaluation == "너무 비쌈")
+            return "가격이 너무 높아 구매 전환이 낮습니다.";
+
+        if (item.crowdLevel < 35)
+            return "현재 고객 관심도가 낮습니다.";
+
+        return "큰 위험 요소는 낮습니다.";
+    }
+
+    string GetSalesRecommendationMessage(SellableItemData item)
+    {
+        if (item == null || item.craftedItem == null)
+            return "-";
+
+        if (item.lifeTurns <= 2)
+            return "유행 수명이 짧으므로 할인 판매를 고려하세요.";
+
+        if (item.crowdLevel >= 75 && item.priceEvaluation == "적정")
+            return "고객이 몰리고 있습니다. 정가 판매 추천.";
+
+        if (item.crowdLevel >= 75 && item.priceEvaluation == "저렴함")
+            return "수요가 높습니다. 가격을 올려도 좋습니다.";
+
+        if (item.crowdLevel < 45)
+            return "홍보 후 판매하는 것이 좋습니다.";
+
+        if (item.priceEvaluation == "비쌈" || item.priceEvaluation == "너무 비쌈")
+            return "가격 부담이 큽니다. 할인 판매를 고려하세요.";
+
+        return "현재 조건에서는 정가 판매가 무난합니다.";
     }
 
     float CalculatePromotionBoost(string background, string filter, string tag1, string tag2, string tag3)
@@ -281,7 +463,7 @@ public class SellManager : MonoBehaviour
         }
     }
 
-    void RefreshCenterUI()
+   void RefreshCenterUI()
     {
         if (selectedItem == null)
         {
@@ -289,12 +471,12 @@ public class SellManager : MonoBehaviour
                 selectedItemTitleText.text = "선택된 아이템 없음";
 
             if (itemInfoText != null)
+            {
                 itemInfoText.text =
-                "재고 : " + selectedItem.stock + "\n" +
-                "등급 : " + selectedItem.craftedItem.grade + "\n" +
-                "남은 유행 턴 : " + selectedItem.lifeTurns + "\n" +
-                "홍보 횟수 : " + selectedItem.promotionCount + "\n" +
-                "마지막 홍보 효과 : +" + selectedItem.lastPromotionBoost.ToString("F1");
+                    "판매할 아이템을 왼쪽 목록에서 선택하세요.\n\n" +
+                    "제작파트에서 아이템을 만든 뒤 판매파트로 이동하면\n" +
+                    "이곳에서 고객 몰림도, 가격 적정성, 예상 판매 확률을 확인할 수 있습니다.";
+            }
 
             if (trendValueText != null)
                 trendValueText.text = "유행 지수 : -";
@@ -305,35 +487,127 @@ public class SellManager : MonoBehaviour
             if (trendSlider != null)
                 trendSlider.value = 0f;
 
+            ClearCrowdUI();
+
+            return;
+        }
+
+        if (selectedItem.craftedItem == null)
+        {
+            if (selectedItemTitleText != null)
+                selectedItemTitleText.text = "아이템 데이터 오류";
+
+            if (itemInfoText != null)
+                itemInfoText.text = "선택된 판매 아이템에 제작 결과 데이터가 없습니다.";
+
+            if (trendValueText != null)
+                trendValueText.text = "유행 지수 : -";
+
+            if (currentPriceText != null)
+                currentPriceText.text = "현재 판매가 : -";
+
+            if (trendSlider != null)
+                trendSlider.value = 0f;
+
+            ClearCrowdUI();
+
             return;
         }
 
         CraftedItemResult crafted = selectedItem.craftedItem;
 
+        UpdateSalesPrediction(selectedItem);
+        RefreshCrowdUI(selectedItem);
+
         if (selectedItemTitleText != null)
             selectedItemTitleText.text = crafted.itemName;
+
+        string priceModeText = selectedItem.useManualPrice ? "수동 가격" : "자동 가격";
+        int currentPrice = CalculateCurrentPrice(selectedItem);
 
         if (itemInfoText != null)
         {
             itemInfoText.text =
                 "등급 : " + crafted.grade + "\n" +
                 "기본 가격 : " + crafted.finalPrice + " G\n" +
+                "현재 판매가 : " + currentPrice + " G (" + priceModeText + ")\n" +
                 "타겟 고객층 : " + crafted.targetAudience + "\n" +
-                "유행성 : " + crafted.trendLevel + "\n" +
                 "재고 : " + selectedItem.stock + "\n" +
                 "남은 수명 : " + selectedItem.lifeTurns;
+        }
+
+        if (marketStatusText != null)
+        {
+            marketStatusText.text =
+                "가격 적정성 : " + selectedItem.priceEvaluation + "\n" +
+                "예상 판매 확률 : " + Mathf.RoundToInt(selectedItem.expectedSellChance) + "%\n" +
+                "추천 행동 : " + selectedItem.recommendationMessage + "\n" +
+                "위험 원인 : " + selectedItem.riskMessage;
         }
 
         if (trendValueText != null)
             trendValueText.text = "유행 지수 : " + Mathf.RoundToInt(selectedItem.trendValue);
 
         if (currentPriceText != null)
-            currentPriceText.text = "현재 판매가 : " + CalculateCurrentPrice(selectedItem) + " G";
+            currentPriceText.text = "현재 판매가 : " + currentPrice + " G";
+
+        if (marketStatusText != null)
+            marketStatusText.text = "시장 반응 정보가 여기에 표시됩니다.";
 
         if (trendSlider != null)
             trendSlider.value = selectedItem.trendValue / 100f;
     }
 
+    void RefreshCrowdUI(SellableItemData item)
+    {
+        if (item == null)
+        {
+            ClearCrowdUI();
+            return;
+        }
+
+        float crowd = Mathf.Clamp(item.crowdLevel, 0f, 100f);
+
+        if (crowdSlider != null)
+            crowdSlider.value = crowd;
+
+        if (crowdValueText != null)
+            crowdValueText.text = Mathf.RoundToInt(crowd) + "%";
+
+        if (customerIcons != null)
+        {
+            int activeCount = Mathf.CeilToInt(crowd / 20f);
+
+            for (int i = 0; i < customerIcons.Length; i++)
+            {
+                if (customerIcons[i] == null)
+                    continue;
+
+                if (i < activeCount)
+                    customerIcons[i].color = Color.white;
+                else
+                    customerIcons[i].color = new Color(1f, 1f, 1f, 0.25f);
+            }
+        }
+    }
+
+    void ClearCrowdUI()
+    {
+        if (crowdSlider != null)
+            crowdSlider.value = 0f;
+
+        if (crowdValueText != null)
+            crowdValueText.text = "-";
+
+        if (customerIcons != null)
+        {
+            for (int i = 0; i < customerIcons.Length; i++)
+            {
+                if (customerIcons[i] != null)
+                    customerIcons[i].color = new Color(1f, 1f, 1f, 0.25f);
+            }
+        }
+    }
     public void OnClickSellNormal()
     {
         if (selectedItem == null)
@@ -348,6 +622,23 @@ public class SellManager : MonoBehaviour
             return;
         }
 
+        UpdateSalesPrediction(selectedItem);
+
+        float roll = Random.Range(0f, 100f);
+
+        if (roll > selectedItem.expectedSellChance)
+        {
+            AddLog("[정가 판매 실패] " + selectedItem.craftedItem.itemName +
+                " / 예상 확률 " + Mathf.RoundToInt(selectedItem.expectedSellChance) + "% / " +
+                selectedItem.riskMessage);
+
+            if (salesFeedbackUI != null)
+                salesFeedbackUI.ShowFail(selectedItem);
+
+            RefreshUI();
+            return;
+        }
+
         int sellPrice = CalculateCurrentPrice(selectedItem);
 
         selectedItem.stock -= 1;
@@ -355,7 +646,12 @@ public class SellManager : MonoBehaviour
         totalSales += sellPrice;
         totalSoldCount += 1;
 
-        AddLog("[정가 판매] " + selectedItem.craftedItem.itemName + " / +" + sellPrice + " G");
+        AddLog("[정가 판매 성공] " + selectedItem.craftedItem.itemName +
+            " / +" + sellPrice + " G / 고객 몰림도 " +
+            Mathf.RoundToInt(selectedItem.crowdLevel) + "%");
+
+        if (salesFeedbackUI != null)
+            salesFeedbackUI.ShowSuccess(selectedItem, sellPrice);
 
         RemoveItemIfEmpty(selectedItem);
         RefreshUI();
@@ -375,6 +671,24 @@ public class SellManager : MonoBehaviour
             return;
         }
 
+        UpdateSalesPrediction(selectedItem);
+
+        float discountChance = Mathf.Clamp(selectedItem.expectedSellChance + 20f, 0f, 100f);
+        float roll = Random.Range(0f, 100f);
+
+        if (roll > discountChance)
+        {
+            AddLog("[할인 판매 실패] " + selectedItem.craftedItem.itemName +
+                " / 예상 확률 " + Mathf.RoundToInt(discountChance) + "% / " +
+                selectedItem.riskMessage);
+
+            if (salesFeedbackUI != null)
+                salesFeedbackUI.ShowFail(selectedItem);
+
+            RefreshUI();
+            return;
+        }
+
         int sellPrice = CalculateDiscountPrice(selectedItem);
 
         selectedItem.stock -= 1;
@@ -383,9 +697,68 @@ public class SellManager : MonoBehaviour
         totalDiscountSales += sellPrice;
         totalSoldCount += 1;
 
-        AddLog("[할인 판매] " + selectedItem.craftedItem.itemName + " / +" + sellPrice + " G");
+        AddLog("[할인 판매 성공] " + selectedItem.craftedItem.itemName +
+            " / +" + sellPrice + " G / 할인으로 구매 장벽 감소");
+
+        if (salesFeedbackUI != null)
+            salesFeedbackUI.ShowSuccess(selectedItem, sellPrice);
 
         RemoveItemIfEmpty(selectedItem);
+        RefreshUI();
+    }
+    public void OnClickPriceUp()
+    {
+        if (selectedItem == null)
+        {
+            AddLog("가격을 조정할 아이템이 없습니다.");
+            return;
+        }
+
+        int currentPrice = CalculateCurrentPrice(selectedItem);
+        selectedItem.manualPrice = currentPrice + 10;
+        selectedItem.useManualPrice = true;
+
+        UpdateSalesPrediction(selectedItem);
+
+        AddLog("[가격 조정] 판매가를 " + selectedItem.manualPrice + "G로 올렸습니다.");
+
+        RefreshUI();
+    }
+
+    public void OnClickPriceDown()
+    {
+        if (selectedItem == null)
+        {
+            AddLog("가격을 조정할 아이템이 없습니다.");
+            return;
+        }
+
+        int currentPrice = CalculateCurrentPrice(selectedItem);
+        selectedItem.manualPrice = Mathf.Max(1, currentPrice - 10);
+        selectedItem.useManualPrice = true;
+
+        UpdateSalesPrediction(selectedItem);
+
+        AddLog("[가격 조정] 판매가를 " + selectedItem.manualPrice + "G로 내렸습니다.");
+
+        RefreshUI();
+    }
+
+    public void OnClickPriceReset()
+    {
+        if (selectedItem == null)
+        {
+            AddLog("가격을 초기화할 아이템이 없습니다.");
+            return;
+        }
+
+        selectedItem.manualPrice = 0;
+        selectedItem.useManualPrice = false;
+
+        UpdateSalesPrediction(selectedItem);
+
+        AddLog("[가격 조정] 유행 지수 기반 자동 가격으로 되돌렸습니다.");
+
         RefreshUI();
     }
 
@@ -493,17 +866,42 @@ public class SellManager : MonoBehaviour
 
     void UpdateTrend(SellableItemData item)
     {
+        if (item == null || item.craftedItem == null)
+            return;
+
         item.lifeTurns -= 1;
 
-        float change = Random.Range(-15f, 16f);
+        CraftedItemResult crafted = item.craftedItem;
 
-        if (item.craftedItem.grade == "S") change += 8f;
-        else if (item.craftedItem.grade == "A") change += 4f;
+        float change = Random.Range(-8f, 9f);
+
+        if (crafted.freshnessScore >= 60 && item.lifeTurns >= 4)
+            change += 8f;
+
+        if (crafted.popularityScore >= 60)
+            change += 3f;
+
+        if (crafted.stabilityScore >= 60)
+            change += 4f;
+        else if (crafted.stabilityScore < 30)
+            change -= 6f;
+
+        if (crafted.grade == "S")
+            change += 8f;
+        else if (crafted.grade == "A")
+            change += 4f;
+
+        if (crafted.aiBonus > 0)
+            change += 3f;
 
         if (item.lifeTurns <= 2)
-            change -= 20f;
+            change -= 18f;
+        else if (item.lifeTurns <= 4)
+            change -= 6f;
 
         item.trendValue = Mathf.Clamp(item.trendValue + change, 0f, 100f);
+
+        UpdateSalesPrediction(item);
     }
 
     void AddLog(string message)
@@ -622,6 +1020,99 @@ public class SellManager : MonoBehaviour
         }
     }
 
+    public void OpenSNSPromotionStudio()
+    {
+        if (selectedItem == null)
+        {
+            AddLog("SNS 홍보할 아이템을 먼저 선택하세요.");
+            return;
+        }
+
+        if (snsPromotionStudioUI == null)
+        {
+            AddLog("SNS 홍보 스튜디오가 연결되지 않았습니다.");
+            return;
+        }
+
+        snsPromotionStudioUI.OpenStudio(selectedItem);
+    }
+
+    public void ApplySNSPromotionFromStudio(
+        SellableItemData item,
+        float trendBoost,
+        float crowdBoost,
+        int cost,
+        string caption,
+        string hashtags)
+    {
+        if (item == null || item.craftedItem == null)
+            return;
+
+        if (currentGold < cost)
+        {
+            AddLog("[SNS 홍보 실패] 골드가 부족합니다.");
+            return;
+        }
+
+        currentGold -= cost;
+        totalPromotionCost += cost;
+
+        item.promotionCount += 1;
+        item.lastPromotionBoost = trendBoost;
+
+        item.trendValue = Mathf.Clamp(item.trendValue + trendBoost, 0f, 100f);
+        item.crowdLevel = Mathf.Clamp(item.crowdLevel + crowdBoost, 0f, 100f);
+
+        UpdateSalesPrediction(item);
+
+        AddLog("[SNS 홍보] " + item.craftedItem.itemName +
+            " / 유행 +" + Mathf.RoundToInt(trendBoost) +
+            " / 고객 몰림 +" + Mathf.RoundToInt(crowdBoost) + "%" +
+            " / 비용 -" + cost + "G");
+
+        RefreshUI();
+    }
+
+    public void OpenSettlementFullPanel()
+    {
+        if (settlementFullPanelUI == null)
+        {
+            AddLog("큰 정산 패널이 연결되지 않았습니다.");
+            return;
+        }
+
+        int normalSales = totalSales - totalDiscountSales;
+        if (normalSales < 0)
+            normalSales = 0;
+
+        settlementFullPanelUI.Show(
+            totalSales,
+            normalSales,
+            totalDiscountSales,
+            totalPromotionCost,
+            materialCost,
+            rentCost,
+            manageCost,
+            totalSoldCount
+        );
+    }
+
+    public void ResetAfterSettlement()
+    {
+        sellableItems.Clear();
+        selectedItem = null;
+
+        totalSales = 0;
+        totalDiscountSales = 0;
+        totalSoldCount = 0;
+        totalPromotionCost = 0;
+
+        sellLogs.Clear();
+
+        processedCraftedItemCount = 0;
+
+        RefreshUI();
+    }
     void SetBarWidth(RectTransform barRect, int value, int maxValue)
     {
         if (barRect == null)
