@@ -4,21 +4,64 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
 
+public enum TrendismServerTarget
+{
+    Cloudflare,
+    Localhost,
+    Custom
+}
+
 public class ApiManager : MonoBehaviour
 {
     public static ApiManager Instance;
 
-    [Header("서버 설정")]
-    [Tooltip("Cloudflare/Ngrok 등 서버 Base URL. 끝에 / 없이 입력")]
-    [SerializeField] private string baseUrl = "https://neural-positioning-migration-commissioners.trycloudflare.com";
+    [Header("서버 선택")]
+    public TrendismServerTarget serverTarget = TrendismServerTarget.Cloudflare;
 
+    [Tooltip("서버 담당자가 열어준 Cloudflare 주소. 끝에 / 없이 입력")]
+    [SerializeField] private string cloudflareBaseUrl = "https://logic-yarn-advances-colorado.trycloudflare.com";
+
+    [Tooltip("내 컴퓨터에서 uvicorn을 직접 실행할 때 쓰는 주소")]
+    [SerializeField] private string localBaseUrl = "http://127.0.0.1:8000";
+
+    [Tooltip("직접 입력하고 싶을 때 사용")]
+    [SerializeField] private string customBaseUrl = "";
+
+    [Header("하위 호환용 Base URL")]
+    [Tooltip("기존 스크립트가 baseUrl을 참조하던 경우를 위한 값입니다. Custom 모드가 아니면 위 서버 선택값이 우선입니다.")]
+    [SerializeField] private string baseUrl = "https://logic-yarn-advances-colorado.trycloudflare.com";
     [Header("연결 상태")]
     public bool isServerConnected = false;
+    public long lastResponseCode = 0;
+    public string lastError = "";
+    public string lastResponseBody = "";
+
+    [Header("요청 설정")]
+    public int defaultTimeoutSeconds = 10;
+    public bool addNgrokSkipHeader = true;
 
     [Header("로그")]
-    public bool verboseLog = true;
+    public bool verboseLog = false;
 
-    public string BaseUrl => NormalizeBaseUrl(baseUrl);
+    public string BaseUrl
+    {
+        get
+        {
+            string selected = "";
+
+            if (serverTarget == TrendismServerTarget.Localhost)
+                selected = localBaseUrl;
+            else if (serverTarget == TrendismServerTarget.Custom)
+                selected = string.IsNullOrWhiteSpace(customBaseUrl) ? baseUrl : customBaseUrl;
+            else
+                selected = cloudflareBaseUrl;
+
+            if (string.IsNullOrWhiteSpace(selected))
+                selected = baseUrl;
+
+            return NormalizeBaseUrl(selected);
+        }
+    }
 
     private void Awake()
     {
@@ -26,6 +69,10 @@ public class ApiManager : MonoBehaviour
         {
             Instance = this;
             DontDestroyOnLoad(gameObject);
+
+            cloudflareBaseUrl = NormalizeBaseUrl(cloudflareBaseUrl);
+            localBaseUrl = NormalizeBaseUrl(localBaseUrl);
+            customBaseUrl = NormalizeBaseUrl(customBaseUrl);
             baseUrl = NormalizeBaseUrl(baseUrl);
         }
         else
@@ -42,9 +89,34 @@ public class ApiManager : MonoBehaviour
 #if UNITY_EDITOR
     private void OnValidate()
     {
+        cloudflareBaseUrl = NormalizeBaseUrl(cloudflareBaseUrl);
+        localBaseUrl = NormalizeBaseUrl(localBaseUrl);
+        customBaseUrl = NormalizeBaseUrl(customBaseUrl);
         baseUrl = NormalizeBaseUrl(baseUrl);
     }
 #endif
+
+    [ContextMenu("서버 모드: Cloudflare")]
+    public void UseCloudflare()
+    {
+        serverTarget = TrendismServerTarget.Cloudflare;
+        Debug.Log("[ApiManager] 서버 모드 변경: Cloudflare / " + BaseUrl);
+    }
+
+    [ContextMenu("서버 모드: Localhost")]
+    public void UseLocalhost()
+    {
+        serverTarget = TrendismServerTarget.Localhost;
+        Debug.Log("[ApiManager] 서버 모드 변경: Localhost / " + BaseUrl);
+    }
+
+    public void SetCustomBaseUrl(string url)
+    {
+        customBaseUrl = NormalizeBaseUrl(url);
+        baseUrl = customBaseUrl;
+        serverTarget = TrendismServerTarget.Custom;
+        Debug.Log("[ApiManager] Custom BaseUrl 설정: " + BaseUrl);
+    }
 
     [ContextMenu("서버 연결 테스트")]
     public void TestConnectionFromInspector()
@@ -52,7 +124,7 @@ public class ApiManager : MonoBehaviour
         StartCoroutine(CheckServerConnection());
     }
 
-    private string NormalizeBaseUrl(string url)
+    public string NormalizeBaseUrl(string url)
     {
         if (string.IsNullOrWhiteSpace(url))
             return "";
@@ -60,7 +132,7 @@ public class ApiManager : MonoBehaviour
         return url.Trim().TrimEnd('/');
     }
 
-    private string BuildUrl(string endpoint)
+    public string BuildUrl(string endpoint)
     {
         string fixedBase = BaseUrl;
         string fixedEndpoint = string.IsNullOrWhiteSpace(endpoint) ? "" : endpoint.Trim();
@@ -74,28 +146,38 @@ public class ApiManager : MonoBehaviour
         return fixedBase + "/" + fixedEndpoint.TrimStart('/');
     }
 
-    private void ApplyCommonHeaders(UnityWebRequest request)
+    public void ApplyCommonHeaders(UnityWebRequest request)
     {
         if (request == null)
             return;
 
         request.SetRequestHeader("Accept", "application/json");
 
-        // Cloudflare에서는 없어도 되지만, ngrok에서 다시 테스트할 때 문제 없게 유지
-        request.SetRequestHeader("ngrok-skip-browser-warning", "true");
+        if (addNgrokSkipHeader)
+            request.SetRequestHeader("ngrok-skip-browser-warning", "true");
     }
 
-    private bool IsSuccess(UnityWebRequest request)
+    public bool IsSuccess(UnityWebRequest request)
     {
-        return request.result == UnityWebRequest.Result.Success &&
+        return request != null &&
+               request.result == UnityWebRequest.Result.Success &&
                request.responseCode >= 200 &&
                request.responseCode < 300;
     }
 
+    private void SaveLastResult(UnityWebRequest request)
+    {
+        if (request == null)
+            return;
+
+        lastResponseCode = request.responseCode;
+        lastError = request.error;
+        lastResponseBody = request.downloadHandler != null ? request.downloadHandler.text : "";
+        isServerConnected = IsSuccess(request);
+    }
+
     public IEnumerator CheckServerConnection()
     {
-        // 루트("/")는 서버 설정에 따라 404가 날 수 있어서,
-        // 실제로 게임에서 쓰는 /keywords 엔드포인트로 연결 확인
         string url = BuildUrl("/keywords");
 
         if (verboseLog)
@@ -103,14 +185,12 @@ public class ApiManager : MonoBehaviour
 
         using (UnityWebRequest req = UnityWebRequest.Get(url))
         {
-            req.timeout = 8;
+            req.timeout = defaultTimeoutSeconds;
             ApplyCommonHeaders(req);
 
             yield return req.SendWebRequest();
 
-            string body = req.downloadHandler != null ? req.downloadHandler.text : "";
-
-            isServerConnected = IsSuccess(req);
+            SaveLastResult(req);
 
             if (isServerConnected)
             {
@@ -119,11 +199,11 @@ public class ApiManager : MonoBehaviour
             else
             {
                 Debug.LogWarning(
-                    "[WARN] 서버 연결 실패 -> 오프라인 모드 가능\n" +
+                    "[WARN] 서버 연결 실패 -> 로컬 fallback 가능\n" +
                     "URL: " + url + "\n" +
                     "HTTP: " + req.responseCode + "\n" +
                     "ERROR: " + req.error + "\n" +
-                    "BODY: " + body
+                    "BODY: " + lastResponseBody
                 );
             }
         }
@@ -138,26 +218,19 @@ public class ApiManager : MonoBehaviour
 
         using (UnityWebRequest request = UnityWebRequest.Get(url))
         {
-            request.timeout = 8;
+            request.timeout = defaultTimeoutSeconds;
             ApplyCommonHeaders(request);
 
             yield return request.SendWebRequest();
 
-            string body = request.downloadHandler != null ? request.downloadHandler.text : "";
+            SaveLastResult(request);
 
             if (IsSuccess(request))
             {
                 if (verboseLog)
-                {
-                    Debug.Log(
-                        "[ApiManager] GET 성공\n" +
-                        "URL: " + url + "\n" +
-                        "HTTP: " + request.responseCode + "\n" +
-                        "BODY: " + body
-                    );
-                }
+                    Debug.Log("[ApiManager] GET 성공\nURL: " + url + "\nHTTP: " + request.responseCode + "\nBODY: " + lastResponseBody);
 
-                onSuccess?.Invoke(body);
+                onSuccess?.Invoke(lastResponseBody);
             }
             else
             {
@@ -166,7 +239,7 @@ public class ApiManager : MonoBehaviour
                     "URL: " + url + "\n" +
                     "HTTP: " + request.responseCode + "\n" +
                     "ERROR: " + request.error + "\n" +
-                    "BODY: " + body;
+                    "BODY: " + lastResponseBody;
 
                 Debug.LogWarning("[ApiManager] " + error);
                 onFail?.Invoke(error);
@@ -176,53 +249,52 @@ public class ApiManager : MonoBehaviour
 
     public IEnumerator Post(string endpoint, string jsonBody, Action<string> onSuccess, Action<string> onFail = null)
     {
+        yield return StartCoroutine(SendWithBody("POST", endpoint, jsonBody, onSuccess, onFail));
+    }
+
+    public IEnumerator Patch(string endpoint, string jsonBody, Action<string> onSuccess, Action<string> onFail = null)
+    {
+        yield return StartCoroutine(SendWithBody("PATCH", endpoint, jsonBody, onSuccess, onFail));
+    }
+
+    public IEnumerator SendWithBody(string method, string endpoint, string jsonBody, Action<string> onSuccess, Action<string> onFail = null)
+    {
         string url = BuildUrl(endpoint);
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(string.IsNullOrEmpty(jsonBody) ? "{}" : jsonBody);
+        string bodyText = string.IsNullOrEmpty(jsonBody) ? "{}" : jsonBody;
+        byte[] bodyRaw = Encoding.UTF8.GetBytes(bodyText);
+        string fixedMethod = string.IsNullOrWhiteSpace(method) ? "POST" : method.Trim().ToUpper();
 
         if (verboseLog)
-        {
-            Debug.Log(
-                "[ApiManager] POST 요청\n" +
-                "URL: " + url + "\n" +
-                "BODY: " + jsonBody
-            );
-        }
+            Debug.Log("[ApiManager] " + fixedMethod + " 요청\nURL: " + url + "\nBODY: " + bodyText);
 
-        using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
+        using (UnityWebRequest request = new UnityWebRequest(url, fixedMethod))
         {
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
-            request.timeout = 15;
+            request.timeout = defaultTimeoutSeconds;
 
             ApplyCommonHeaders(request);
             request.SetRequestHeader("Content-Type", "application/json");
 
             yield return request.SendWebRequest();
 
-            string body = request.downloadHandler != null ? request.downloadHandler.text : "";
+            SaveLastResult(request);
 
             if (IsSuccess(request))
             {
                 if (verboseLog)
-                {
-                    Debug.Log(
-                        "[ApiManager] POST 성공\n" +
-                        "URL: " + url + "\n" +
-                        "HTTP: " + request.responseCode + "\n" +
-                        "BODY: " + body
-                    );
-                }
+                    Debug.Log("[ApiManager] " + fixedMethod + " 성공\nURL: " + url + "\nHTTP: " + request.responseCode + "\nBODY: " + lastResponseBody);
 
-                onSuccess?.Invoke(body);
+                onSuccess?.Invoke(lastResponseBody);
             }
             else
             {
                 string error =
-                    "POST 실패\n" +
+                    fixedMethod + " 실패\n" +
                     "URL: " + url + "\n" +
                     "HTTP: " + request.responseCode + "\n" +
                     "ERROR: " + request.error + "\n" +
-                    "BODY: " + body;
+                    "BODY: " + lastResponseBody;
 
                 Debug.LogWarning("[ApiManager] " + error);
                 onFail?.Invoke(error);
@@ -230,11 +302,6 @@ public class ApiManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 백엔드 정적 이미지를 Texture2D로 다운로드.
-    /// url이 상대 경로(/static/...)면 baseUrl을 자동으로 붙임.
-    /// 절대 경로(https://...)면 그대로 사용.
-    /// </summary>
     public IEnumerator GetTexture(string url, Action<Texture2D> onSuccess, Action<string> onFail = null)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -245,19 +312,19 @@ public class ApiManager : MonoBehaviour
 
         string fullUrl = url.StartsWith("http", StringComparison.OrdinalIgnoreCase)
             ? url
-            : BaseUrl + "/" + url.TrimStart('/');
+            : BuildUrl(url);
 
         if (verboseLog)
             Debug.Log("[ApiManager] IMAGE GET URL = " + fullUrl);
 
         using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(fullUrl))
         {
-            request.timeout = 15;
+            request.timeout = defaultTimeoutSeconds;
             ApplyCommonHeaders(request);
 
             yield return request.SendWebRequest();
 
-            string body = request.downloadHandler != null ? request.downloadHandler.text : "";
+            SaveLastResult(request);
 
             if (IsSuccess(request))
             {
@@ -271,7 +338,7 @@ public class ApiManager : MonoBehaviour
                     "URL: " + fullUrl + "\n" +
                     "HTTP: " + request.responseCode + "\n" +
                     "ERROR: " + request.error + "\n" +
-                    "BODY: " + body;
+                    "BODY: " + lastResponseBody;
 
                 Debug.LogWarning("[ApiManager] " + error);
                 onFail?.Invoke(error);

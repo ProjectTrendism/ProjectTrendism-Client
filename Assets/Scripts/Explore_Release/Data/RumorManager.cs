@@ -15,17 +15,20 @@ public class RumorManager : MonoBehaviour
     [Header("유행 분석 점수")]
     public Dictionary<string, int> keywordTrendScores = new Dictionary<string, int>();
 
+    [Header("디버그")]
+    public bool verboseLog = false;
+
     private void Awake()
     {
         if (Instance == null)
         {
             Instance = this;
             DontDestroyOnLoad(gameObject);
-            Debug.Log("RumorManager 유지 시작");
+            if (verboseLog) Debug.Log("RumorManager 유지 시작");
         }
         else
         {
-            Debug.Log("중복 RumorManager 삭제");
+            if (verboseLog) Debug.Log("중복 RumorManager 삭제");
             Destroy(gameObject);
         }
     }
@@ -60,9 +63,12 @@ public class RumorManager : MonoBehaviour
         AddKeywordCount(newRumor.relatedKeyword);
         AddTrendScore(newRumor.relatedKeyword, CalculateTrendScore(newRumor));
 
-        Debug.Log("소문 추가: " + newRumor.rumorText);
-        Debug.Log("현재 소문 개수: " + collectedRumors.Count);
-        Debug.Log("키워드 [" + newRumor.relatedKeyword + "] 유행 점수: " + GetKeywordTrendScore(newRumor.relatedKeyword));
+        if (verboseLog)
+        {
+            Debug.Log("소문 추가: " + newRumor.rumorText);
+            Debug.Log("현재 소문 개수: " + collectedRumors.Count);
+            Debug.Log("키워드 [" + newRumor.relatedKeyword + "] 유행 점수: " + GetKeywordTrendScore(newRumor.relatedKeyword));
+        }
 
         RumorLogUI rumorUI = FindObjectOfType<RumorLogUI>();
         if (rumorUI != null)
@@ -178,6 +184,52 @@ public class RumorManager : MonoBehaviour
         }
 
         return builder.ToString();
+    }
+
+
+    public void SetServerTrendData(string keyword, int count, int trendScore)
+    {
+        if (string.IsNullOrEmpty(keyword))
+            return;
+
+        keywordCounts[keyword] = Mathf.Max(1, count);
+        keywordTrendScores[keyword] = Mathf.Max(1, trendScore);
+
+        if (verboseLog) Debug.Log("[RumorManager] 서버 빈도/유행 점수 반영: " + keyword + " / count=" + keywordCounts[keyword] + " / score=" + keywordTrendScores[keyword]);
+    }
+
+    public void AddServerRumor(string keyword, string message, string source, int reliability, int trendWeight)
+    {
+        if (string.IsNullOrEmpty(keyword))
+            return;
+
+        RumorData rumor = new RumorData
+        {
+            rumorId = "server_" + keyword + "_" + Time.frameCount,
+            rumorText = string.IsNullOrEmpty(message) ? "서버에서 수집된 유행 정보" : message,
+            sourceNPC = string.IsNullOrEmpty(source) ? "서버" : source,
+            zoneName = "서버",
+            relatedKeyword = keyword,
+            isRareHint = false,
+            reliability = reliability <= 0 ? 50 : reliability,
+            trendWeight = trendWeight <= 0 ? 1 : trendWeight,
+            rumorType = "서버 동기화"
+        };
+
+        AddRumor(rumor);
+    }
+
+
+    public void ClearServerTrendData()
+    {
+        keywordCounts.Clear();
+        keywordTrendScores.Clear();
+
+        RumorLogUI rumorUI = FindObjectOfType<RumorLogUI>();
+        if (rumorUI != null)
+        {
+            rumorUI.RefreshRumorUI();
+        }
     }
 
     public void ClearRumors()

@@ -228,7 +228,7 @@ public class NPCInteraction : MonoBehaviour
     public bool giveOnlyOnce = true;
 
     [Header("디버그")]
-    public bool verboseLog = true;
+    public bool verboseLog = false;
 
     [Header("서버 주입 데이터 - 확인용")]
     [SerializeField] private string portraitId = "";
@@ -349,6 +349,14 @@ public class NPCInteraction : MonoBehaviour
         if (data == null)
             return;
 
+        // 서버 id가 Cloudflare DB에서 밀려 있을 수 있으므로, 서버 데이터가 적용되는 순간
+        // Unity NPC의 npcServerId도 서버 id로 보정한다.
+        if (data.id > 0 && npcServerId != data.id)
+        {
+            Debug.LogWarning($"[NPCInteraction] npcServerId 자동 보정: {npcServerId} → {data.id} / NPC={data.name}");
+            npcServerId = data.id;
+        }
+
         if (!string.IsNullOrEmpty(data.name))
         {
             npcName = data.name;
@@ -386,10 +394,13 @@ public class NPCInteraction : MonoBehaviour
 
         gameObject.SetActive(isActive);
 
-        Debug.Log(
-            $"[NPCInteraction] NPC 서버 데이터 적용 완료: " +
-            $"id={data.id}, name={npcName}, dialogue={dialogueMessage}, talked={talked}, reliability={GetReliabilityText()}"
-        );
+        if (verboseLog)
+        {
+            Debug.Log(
+                $"[NPCInteraction] NPC 서버 데이터 적용 완료: " +
+                $"id={data.id}, name={npcName}, talked={talked}, reliability={GetReliabilityText()}"
+            );
+        }
 
         RefreshOpenedDialogue();
     }
@@ -437,7 +448,7 @@ public class NPCInteraction : MonoBehaviour
 
         ResolveNpcServerManager();
 
-        Debug.Log($"[NPCInteraction] 대화창 열기 / npcName={npcName}, npcServerId={npcServerId}, dialogue={dialogueMessage}, reliability={GetReliabilityText()}");
+        if (verboseLog) Debug.Log($"[NPCInteraction] 대화창 열기 / npcName={npcName}, npcServerId={npcServerId}, reliability={GetReliabilityText()}");
         
         isCurrentDialogueNpc = true;
         
@@ -491,7 +502,7 @@ public class NPCInteraction : MonoBehaviour
         dialogueManager.CloseDialogue();
         dialogueManager.OpenDialogue(GetDialogueText());
 
-        Debug.Log($"[NPCInteraction] 현재 대화 NPC UI 갱신 완료 / npcName={npcName}, npcServerId={npcServerId}, dialogue={dialogueMessage}");
+        if (verboseLog) Debug.Log($"[NPCInteraction] 현재 대화 NPC UI 갱신 완료 / npcName={npcName}, npcServerId={npcServerId}");
     }
 
     private IEnumerator ProcessTalkReward()
@@ -520,7 +531,7 @@ public class NPCInteraction : MonoBehaviour
         {
             ServerNpcTalkResponse response = null;
 
-            Debug.Log($"[NPCInteraction] 서버 대화 시도 / npcServerId={npcServerId}, npcName={npcName}");
+            if (verboseLog) Debug.Log($"[NPCInteraction] 서버 대화 시도 / npcServerId={npcServerId}, npcName={npcName}");
 
             yield return StartCoroutine(npcServerManager.TalkToNpc(
                 npcServerId,
@@ -534,11 +545,18 @@ public class NPCInteraction : MonoBehaviour
 
             if (serverSuccess)
             {
-                Debug.Log($"[NPCInteraction] 서버 대화 성공 / npcName={npcName}");
+                if (verboseLog) Debug.Log($"[NPCInteraction] 서버 대화 성공 / npcName={npcName}");
 
                 ApplyServerTalkResponse(response);
 
-                yield return StartCoroutine(npcServerManager.RefreshNpcList());
+                if (ExploreServerManager.Instance != null)
+                {
+                    yield return StartCoroutine(ExploreServerManager.Instance.SyncAfterNpcTalk());
+                }
+                else
+                {
+                    yield return StartCoroutine(npcServerManager.RefreshNpcList());
+                }
             }
             else
             {
@@ -619,10 +637,18 @@ public class NPCInteraction : MonoBehaviour
             return;
         }
 
-        Debug.Log(
-            $"[NPCInteraction] 서버 talk 응답 확인 / status={response.status}, success={response.data.success}, " +
-            $"keyword_id={response.data.keyword_id}, keyword_name={response.data.keyword_name}"
-        );
+        if (verboseLog)
+        {
+            Debug.Log(
+                $"[NPCInteraction] 서버 talk 응답 확인 / status={response.status}, success={response.data.success}, " +
+                $"keyword_id={response.data.keyword_id}, keyword_name={response.data.keyword_name}"
+            );
+        }
+
+        if (!response.data.success)
+        {
+            Debug.LogWarning("[NPCInteraction] 서버 대화 data.success=false 입니다. message/warning을 UI에 표시하고 키워드 지급은 응답에 있는 경우만 반영합니다. warning=" + response.data.warning);
+        }
 
         // 서버 message가 실제 대사다. /explore/action은 talked를 명확히 주지 않을 수 있으므로
         // talked 값은 UI 차단용으로 쓰지 않는다.
@@ -631,11 +657,11 @@ public class NPCInteraction : MonoBehaviour
         if (!string.IsNullOrEmpty(talkDialogue))
         {
             dialogueMessage = talkDialogue;
-            Debug.Log($"[NPCInteraction] 서버 talk 응답 대화문 적용: {dialogueMessage}");
+            if (verboseLog) Debug.Log($"[NPCInteraction] 서버 talk 응답 대화문 적용: {dialogueMessage}");
         }
         else
         {
-            Debug.Log("[NPCInteraction] 서버 talk 응답에 대화문이 없습니다. 기존 대사를 유지합니다.");
+            if (verboseLog) Debug.Log("[NPCInteraction] 서버 talk 응답에 대화문이 없습니다. 기존 대사를 유지합니다.");
         }
 
         // 서버 대화 내용도 소문 로그로 남긴다. 서버에는 별도 rumor API가 없으므로 Unity RumorManager에 기록한다.
@@ -649,11 +675,10 @@ public class NPCInteraction : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning(
-                "[NPCInteraction] 서버 talk 응답에 키워드 정보가 없습니다. " +
-                "현재 서버는 drop_rate 확률 실패 시 keyword_id=null로 응답합니다. " +
-                "테스트 중 매번 지급하려면 서버 NPC drop_rate를 1.0으로 하거나 로컬 fallback을 켜야 합니다."
-            );
+            if (verboseLog)
+            {
+                Debug.Log("[NPCInteraction] 서버 대화 성공, 키워드 드랍 없음. 서버 drop_rate 확률상 정상일 수 있습니다.");
+            }
 
             // 서버 대화는 성공했지만 키워드 드랍만 실패한 경우다.
             // 여기서 로컬 키워드를 지급하면 서버 inventory/frequency와 Unity가 어긋날 수 있어서 기본은 지급하지 않는다.
@@ -662,7 +687,7 @@ public class NPCInteraction : MonoBehaviour
             // hasLocalRewardGiven = true;
         }
 
-        Debug.Log($"[NPCInteraction] 서버 NPC 대화 처리 완료: {npcName}");
+        if (verboseLog) Debug.Log($"[NPCInteraction] 서버 NPC 대화 처리 완료: {npcName}");
 
         RefreshOpenedDialogue();
     }
@@ -729,7 +754,7 @@ public class NPCInteraction : MonoBehaviour
         };
 
         RumorManager.Instance.AddRumor(rumor);
-        Debug.Log($"[NPCInteraction] 서버 대화 소문 기록: {text}");
+        if (verboseLog) Debug.Log($"[NPCInteraction] 서버 대화 소문 기록: {text}");
     }
 
     private void AddKeywordFromServer(ServerGrantedKeyword granted)
@@ -770,7 +795,7 @@ public class NPCInteraction : MonoBehaviour
         Debug.Log($"[서버 keyword] id={granted.id} name='{granted.name}' type={parsedType} rarity={granted.rarity}");
 
         keywordManager.AddKeyword(granted.id, granted.name, parsedType);
-        Debug.Log($"[NPCInteraction] 서버 확정 키워드 동기화: {granted.name}");
+        if (verboseLog) Debug.Log($"[NPCInteraction] 서버 확정 키워드 동기화: {granted.name}");
     }
 
     private void GiveKeywordLocallyIfNeeded()

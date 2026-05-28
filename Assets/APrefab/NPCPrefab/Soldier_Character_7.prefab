@@ -270,7 +270,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df0cda2d39e81d242bd9d521cb6fb22f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NPCInteraction
-  npcServerId: 6
+  npcServerId: 7
   useServer: 1
   allowLocalFallback: 1
   npcName: "\uB9C8\uC744 \uACBD\uBE44\uBCD1"
