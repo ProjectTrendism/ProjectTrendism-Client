@@ -37,13 +37,19 @@ public class AITrendPopupUI : MonoBehaviour
             targetText.text = "추천 고객층 : " + analysis.targetAudience;
 
         if (directionText != null)
-            directionText.text = "추천 제작 방향 : " + analysis.aiDirectionMessage;
+            directionText.text =
+                "추천 제작 방향 : " + analysis.aiDirectionMessage + "\n\n" +
+                "중요: AI 분석은 A등급 보장 버튼이 아니라, 부족한 부분을 알려주는 보조 기능입니다.";
 
         if (riskText != null)
-            riskText.text = "위험 요소 : " + analysis.riskMessage;
+            riskText.text =
+                "위험 요소 : " + analysis.riskMessage + "\n\n" +
+                analysis.problemMessage;
 
         if (selectionText != null)
-            selectionText.text = "현재 조합 평가 : " + analysis.aiMessage;
+            selectionText.text =
+                "현재 조합 평가 : " + analysis.aiMessage + "\n\n" +
+                analysis.nextExploreMessage;
     }
 
     public void Hide()

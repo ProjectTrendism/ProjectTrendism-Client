@@ -349,12 +349,7 @@ public class NPCInteraction : MonoBehaviour
         if (data == null)
             return;
 
-        
-        npcServerId = data.id;
-
-        Debug.Log($"[NPCInteraction] ApplyServerData ID 주입 확인 / npcName={data.name}, data.id={data.id}, npcServerId={npcServerId}");
-
-if (!string.IsNullOrEmpty(data.name))
+        if (!string.IsNullOrEmpty(data.name))
         {
             npcName = data.name;
         }
@@ -467,13 +462,13 @@ if (!string.IsNullOrEmpty(data.name))
 
     private bool IsRewardAlreadyGiven()
     {
-        if (useServer && talked)
-            return true;
+        // 서버 연동 중에는 /explore/npcs의 talked 값만 보고 Unity에서 차단하지 않는다.
+        // 현재 서버는 TALK 보상/드랍을 /explore/action에서 판단하므로,
+        // 클라이언트가 먼저 막으면 keyword_id를 받을 기회 자체가 사라진다.
+        if (useServer)
+            return false;
 
-        if (hasLocalRewardGiven)
-            return true;
-
-        return false;
+        return hasLocalRewardGiven;
     }
 
     private void RefreshOpenedDialogue()
@@ -579,7 +574,7 @@ if (!string.IsNullOrEmpty(data.name))
             return "useServer가 꺼져 있음";
 
         if (npcServerId <= 0)
-            return "npcServerId가 0 이하임. ApplyServerData에서 서버 NPC id가 주입되지 않았거나 서버 data.id가 0임";
+            return "npcServerId가 0 이하임. 서버 NPC id를 인스펙터에 넣어야 함";
 
         if (npcServerManager == null)
             return "NPCServerManager를 찾지 못함";
@@ -612,15 +607,25 @@ if (!string.IsNullOrEmpty(data.name))
 
     private void ApplyServerTalkResponse(ServerNpcTalkResponse response)
     {
-        if (response == null || response.data == null)
+        if (response == null)
         {
-            Debug.LogWarning("[NPCInteraction] 서버 NPC 대화 응답 data가 비어 있습니다.");
+            Debug.LogWarning("[NPCInteraction] 서버 NPC 대화 응답 response 자체가 null입니다.");
             return;
         }
 
-        // /explore/action 응답에는 talked 필드가 없을 수 있으므로 성공 시 talked 처리
-        talked = response.data.talked || response.data.success;
+        if (response.data == null)
+        {
+            Debug.LogWarning("[NPCInteraction] 서버 NPC 대화 응답 data가 null입니다.");
+            return;
+        }
 
+        Debug.Log(
+            $"[NPCInteraction] 서버 talk 응답 확인 / status={response.status}, success={response.data.success}, " +
+            $"keyword_id={response.data.keyword_id}, keyword_name={response.data.keyword_name}"
+        );
+
+        // 서버 message가 실제 대사다. /explore/action은 talked를 명확히 주지 않을 수 있으므로
+        // talked 값은 UI 차단용으로 쓰지 않는다.
         string talkDialogue = GetServerDialogueFromTalkData(response.data);
 
         if (!string.IsNullOrEmpty(talkDialogue))
@@ -633,12 +638,10 @@ if (!string.IsNullOrEmpty(data.name))
             Debug.Log("[NPCInteraction] 서버 talk 응답에 대화문이 없습니다. 기존 대사를 유지합니다.");
         }
 
-        ServerGrantedKeyword granted = ExtractGrantedKeyword(response.data);
+        // 서버 대화 내용도 소문 로그로 남긴다. 서버에는 별도 rumor API가 없으므로 Unity RumorManager에 기록한다.
+        GiveRumorFromServerTalk(response.data);
 
-        Debug.Log(
-            $"[NPCInteraction] 서버 talk 응답 확인 / status={response.status}, success={response.data.success}, " +
-            $"keyword_id={response.data.keyword_id}, keyword_name={response.data.keyword_name}, 키워드 존재={(granted != null)}"
-        );
+        ServerGrantedKeyword granted = ExtractGrantedKeyword(response.data);
 
         if (granted != null)
         {
@@ -648,12 +651,15 @@ if (!string.IsNullOrEmpty(data.name))
         {
             Debug.LogWarning(
                 "[NPCInteraction] 서버 talk 응답에 키워드 정보가 없습니다. " +
-                "현재 서버는 드랍 확률에 실패하면 keyword_id=null 또는 0으로 응답할 수 있습니다. " +
-                "반드시 키워드를 주고 싶으면 서버 drop_rate를 1.0으로 하거나 Unity에서 로컬 fallback을 사용하세요."
+                "현재 서버는 drop_rate 확률 실패 시 keyword_id=null로 응답합니다. " +
+                "테스트 중 매번 지급하려면 서버 NPC drop_rate를 1.0으로 하거나 로컬 fallback을 켜야 합니다."
             );
 
-            // 테스트 중 매번 키워드를 받고 싶으면 아래 줄을 임시로 켜도 됩니다.
+            // 서버 대화는 성공했지만 키워드 드랍만 실패한 경우다.
+            // 여기서 로컬 키워드를 지급하면 서버 inventory/frequency와 Unity가 어긋날 수 있어서 기본은 지급하지 않는다.
+            // 테스트만 빨리 하고 싶으면 아래 두 줄을 임시로 켠다.
             // GiveKeywordLocallyIfNeeded();
+            // hasLocalRewardGiven = true;
         }
 
         Debug.Log($"[NPCInteraction] 서버 NPC 대화 처리 완료: {npcName}");
@@ -675,8 +681,6 @@ if (!string.IsNullOrEmpty(data.name))
         if (data.reward_keyword != null)
             return data.reward_keyword;
 
-        // 현재 서버 /explore/action 응답 구조:
-        // keyword_id, keyword_name, keyword_rarity
         if (data.keyword_id > 0 && !string.IsNullOrEmpty(data.keyword_name))
         {
             ServerGrantedKeyword keyword = new ServerGrantedKeyword();
@@ -684,14 +688,10 @@ if (!string.IsNullOrEmpty(data.name))
             keyword.name = data.keyword_name;
             keyword.rarity = data.keyword_rarity;
 
-            // /explore/action은 category를 안 내려줄 수 있음.
-            // AddKeywordFromServer에서 KeywordManager 마스터 데이터로 타입을 다시 보정한다.
             if (!string.IsNullOrEmpty(data.keyword_type))
                 keyword.keyword_type = data.keyword_type;
             else if (!string.IsNullOrEmpty(data.category))
                 keyword.keyword_type = data.category;
-            else
-                keyword.keyword_type = "";
 
             return keyword;
         }
@@ -699,6 +699,38 @@ if (!string.IsNullOrEmpty(data.name))
         return null;
     }
 
+    private void GiveRumorFromServerTalk(ServerNpcTalkData data)
+    {
+        if (!giveRumor)
+            return;
+
+        if (RumorManager.Instance == null)
+            return;
+
+        string text = GetServerDialogueFromTalkData(data);
+        if (string.IsNullOrEmpty(text))
+            text = dialogueMessage;
+
+        string keywordName = data != null && !string.IsNullOrEmpty(data.keyword_name)
+            ? data.keyword_name
+            : relatedKeyword;
+
+        RumorData rumor = new RumorData
+        {
+            rumorId = npcName + "_server_" + keywordName + "_" + Time.frameCount,
+            rumorText = text,
+            sourceNPC = npcName,
+            zoneName = zoneName,
+            relatedKeyword = keywordName,
+            isRareHint = data != null && data.keyword_rarity == "RARE",
+            reliability = reliabilityKnown ? perceivedReliability : reliability,
+            trendWeight = trendWeight,
+            rumorType = "서버 NPC 대화"
+        };
+
+        RumorManager.Instance.AddRumor(rumor);
+        Debug.Log($"[NPCInteraction] 서버 대화 소문 기록: {text}");
+    }
 
     private void AddKeywordFromServer(ServerGrantedKeyword granted)
     {
@@ -709,10 +741,7 @@ if (!string.IsNullOrEmpty(data.name))
         }
 
         if (granted == null)
-        {
-            Debug.LogWarning("[NPCInteraction] 서버 키워드 데이터가 null입니다.");
             return;
-        }
 
         if (string.IsNullOrEmpty(granted.name))
         {
@@ -722,32 +751,23 @@ if (!string.IsNullOrEmpty(data.name))
 
         KeywordType parsedType = keywordType;
 
-        // 1순위: 서버가 type/category를 내려준 경우
-        string typeText = granted.keyword_type;
-        if (string.IsNullOrEmpty(typeText))
-            typeText = granted.category;
-
-        if (!string.IsNullOrEmpty(typeText))
+        // 1순위: KeywordManager의 마스터 키워드에서 서버 id로 정확히 찾기
+        KeywordData master = keywordManager.GetMasterKeyword(granted.id);
+        if (master != null)
         {
-            System.Enum.TryParse(typeText, true, out parsedType);
+            parsedType = master.keywordType;
         }
         else
         {
-            // 2순위: keyword_id로 마스터 키워드에서 타입 보정
-            KeywordData masterById = keywordManager.GetMasterKeyword(granted.id);
-            if (masterById != null)
-            {
-                parsedType = masterById.keywordType;
-            }
-            else
-            {
-                KeywordData masterByName = keywordManager.GetMasterKeywordByName(granted.name);
-                if (masterByName != null)
-                    parsedType = masterByName.keywordType;
-            }
+            string typeText = granted.keyword_type;
+            if (string.IsNullOrEmpty(typeText))
+                typeText = granted.category;
+
+            if (!string.IsNullOrEmpty(typeText))
+                System.Enum.TryParse(typeText, true, out parsedType);
         }
 
-        Debug.Log($"[서버 granted] id={granted.id} name='{granted.name}' type={typeText} parsedType={parsedType}");
+        Debug.Log($"[서버 keyword] id={granted.id} name='{granted.name}' type={parsedType} rarity={granted.rarity}");
 
         keywordManager.AddKeyword(granted.id, granted.name, parsedType);
         Debug.Log($"[NPCInteraction] 서버 확정 키워드 동기화: {granted.name}");

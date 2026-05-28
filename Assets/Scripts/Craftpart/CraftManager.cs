@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -439,7 +440,7 @@ public class CraftManager : MonoBehaviour
 
         return result;
     }
-/*
+
     public void OnClickCraft()
     {
         if (selectedKeywords.Count == 0)
@@ -450,113 +451,141 @@ public class CraftManager : MonoBehaviour
 
         lastCraftResult = CraftItem();
 
-        if (CraftedItemManager.Instance != null)
-        {
-            CraftedItemManager.Instance.AddCraftedItem(lastCraftResult);
-        }
-
-        if (RecipeBookManager.Instance != null)
-        {
-            RecipeBookManager.Instance.SaveRecipe(selectedKeywords, lastCraftResult);
-        }
-
-        if (resultPopupUI != null)
-        {
-            resultPopupUI.Show(lastCraftResult);
-        }
-        else
-        {
-            Debug.LogWarning("ResultPopupUI가 CraftManager에 연결되지 않았습니다.");
-        }
-
-        if (craftedItemListUI != null)
-        {
-            craftedItemListUI.RefreshList();
-        }
-
-        Debug.Log("제작 완료: " + lastCraftResult.itemName + " / 등급: " + lastCraftResult.grade);
-
-        ClearSelectedKeywords();
-    }
-*/
-    public void OnClickCraft()
-    {
-        if (selectedKeywords.Count == 0)
-        {
-            Debug.Log("선택된 키워드가 없습니다.");
-            return;
-        }
-
-        // 1) 로컬 계산으로 grade/score/preview 결정 (기존 로직 유지)
-        lastCraftResult = CraftItem();
-
-        // 2) 서버 호출 가능하면 AI 메타데이터/이미지 받아오기
         if (ApiManager.Instance != null && ApiManager.Instance.isServerConnected)
         {
             StartCoroutine(CallCombineThenPredict(lastCraftResult));
         }
         else
         {
-            // 오프라인이면 기존 로컬 결과 그대로 사용
-            Debug.LogWarning("[CraftManager] 오프라인 모드 -> 로컬 결과 사용");
+            Debug.LogWarning("[CraftManager] 서버 연결 없음 -> 로컬 결과로 제작 완료");
             FinalizeCraftResult();
         }
     }
 
-    private System.Collections.IEnumerator CallCombineThenPredict(CraftedItemResult result)
+    private IEnumerator CallCombineThenPredict(CraftedItemResult result)
     {
-        // ── /craft/combine ──
-        var combineBody = new CombineRequestBody
+        if (result == null)
         {
-            keyword_ids = new int[]
+            Debug.LogWarning("[CraftManager] 제작 결과가 null입니다.");
+            yield break;
+        }
+
+        List<int> keywordIdList = new List<int>();
+
+        for (int i = 0; i < selectedKeywords.Count; i++)
+        {
+            if (selectedKeywords[i] == null)
+                continue;
+
+            if (selectedKeywords[i].serverId <= 0)
             {
-                selectedKeywords[0].serverId,
-                selectedKeywords[1].serverId,
-                selectedKeywords[2].serverId
+                Debug.LogWarning("[CraftManager] serverId가 없는 키워드가 있습니다: " + selectedKeywords[i].keywordName);
+                continue;
             }
-        };
-        string combineJson = JsonUtility.ToJson(combineBody);
-        string combinationId = null;
 
-        yield return StartCoroutine(ApiManager.Instance.Post("craft/combine", combineJson,
-            (response) =>
-            {
-                var wrapper = JsonUtility.FromJson<CombineWrapper>(response);
-                if (wrapper != null && wrapper.data != null)
-                    combinationId = wrapper.data.combination_id;
-            },
-            (error) => Debug.LogWarning("[combine] 실패: " + error)
-        ));
+            keywordIdList.Add(selectedKeywords[i].serverId);
+        }
 
-        if (string.IsNullOrEmpty(combinationId))
+        // 현재 서버 app/schemas/craft.py의 CombineRequest는 min_length=3, max_length=3이다.
+        // 따라서 제작 서버 AI 이름/설명/이미지를 받으려면 서로 다른 서버 키워드 3개가 반드시 필요하다.
+        List<int> uniqueKeywordIds = new List<int>();
+        for (int i = 0; i < keywordIdList.Count; i++)
         {
-            Debug.LogWarning("[CraftManager] combination_id 못 받음 -> 로컬 결과로 진행");
+            if (!uniqueKeywordIds.Contains(keywordIdList[i]))
+                uniqueKeywordIds.Add(keywordIdList[i]);
+        }
+
+        if (uniqueKeywordIds.Count != 3)
+        {
+            Debug.LogWarning(
+                "[CraftManager] 서버 제작은 서로 다른 keyword_id 3개가 필요합니다. " +
+                "현재 정상 서버 키워드 개수=" + uniqueKeywordIds.Count +
+                " -> 로컬 결과로 진행"
+            );
             FinalizeCraftResult();
             yield break;
         }
 
-        // ── /craft/predict ──
+        var combineBody = new CombineRequestBody
+        {
+            keyword_ids = uniqueKeywordIds.ToArray()
+        };
+
+        string combineJson = JsonUtility.ToJson(combineBody);
+        string combinationId = null;
+
+        Debug.Log("[CraftManager] POST /craft/combine body=" + combineJson);
+
+        yield return StartCoroutine(ApiManager.Instance.Post("/craft/combine", combineJson,
+            (response) =>
+            {
+                Debug.Log("[CraftManager] /craft/combine response=" + response);
+
+                CombineWrapper wrapper = JsonUtility.FromJson<CombineWrapper>(response);
+
+                if (wrapper != null && wrapper.data != null)
+                {
+                    combinationId = wrapper.data.combination_id;
+
+                    if (!string.IsNullOrEmpty(wrapper.data.preview_name))
+                        result.itemName = wrapper.data.preview_name;
+                }
+            },
+            (error) =>
+            {
+                Debug.LogWarning("[CraftManager] /craft/combine 실패: " + error);
+            }
+        ));
+
+        if (string.IsNullOrEmpty(combinationId))
+        {
+            Debug.LogWarning("[CraftManager] combination_id 못 받음 -> 로컬 결과로 제작 완료");
+            FinalizeCraftResult();
+            yield break;
+        }
+
         var predictBody = new PredictRequestBody
         {
             combination_id = combinationId,
             grade = result.grade
         };
+
         string predictJson = JsonUtility.ToJson(predictBody);
 
-        yield return StartCoroutine(ApiManager.Instance.Post("craft/predict", predictJson,
+        Debug.Log("[CraftManager] POST /craft/predict body=" + predictJson);
+
+        yield return StartCoroutine(ApiManager.Instance.Post("/craft/predict", predictJson,
             (response) =>
             {
-                var wrapper = JsonUtility.FromJson<PredictWrapper>(response);
+                Debug.Log("[CraftManager] /craft/predict response=" + response);
+
+                PredictWrapper wrapper = JsonUtility.FromJson<PredictWrapper>(response);
+
                 if (wrapper != null && wrapper.data != null)
                 {
-                    result.itemName = wrapper.data.item_name;
+                    if (!string.IsNullOrEmpty(wrapper.data.item_name))
+                        result.itemName = wrapper.data.item_name;
+
                     result.itemDescription = wrapper.data.item_description;
                     result.imageUrl = wrapper.data.image_url;
                     result.serverItemId = wrapper.data.item_id;
-                    Debug.Log($"[predict] name={result.itemName} cache={wrapper.data._cache} img={result.imageUrl}");
+
+                    if (wrapper.data.final_value > 0)
+                        result.finalPrice = Mathf.RoundToInt(wrapper.data.final_value);
+
+                    if (!string.IsNullOrEmpty(wrapper.data.grade))
+                        result.grade = wrapper.data.grade;
+
+                    Debug.Log("[CraftManager] predict 적용 완료 name=" + result.itemName +
+                              " / itemId=" + result.serverItemId +
+                              " / imageUrl=" + result.imageUrl +
+                              " / cache=" + wrapper.data._cache);
                 }
             },
-            (error) => Debug.LogWarning("[predict] 실패: " + error)
+            (error) =>
+            {
+                Debug.LogWarning("[CraftManager] /craft/predict 실패: " + error);
+            }
         ));
 
         FinalizeCraftResult();
@@ -565,28 +594,41 @@ public class CraftManager : MonoBehaviour
     private void FinalizeCraftResult()
     {
         if (CraftedItemManager.Instance != null)
+        {
             CraftedItemManager.Instance.AddCraftedItem(lastCraftResult);
+        }
 
         if (RecipeBookManager.Instance != null)
+        {
             RecipeBookManager.Instance.SaveRecipe(selectedKeywords, lastCraftResult);
+        }
 
         if (resultPopupUI != null)
+        {
             resultPopupUI.Show(lastCraftResult);
+        }
         else
+        {
             Debug.LogWarning("ResultPopupUI가 CraftManager에 연결되지 않았습니다.");
+        }
 
         if (craftedItemListUI != null)
+        {
             craftedItemListUI.RefreshList();
+        }
 
-        Debug.Log("제작 완료: " + lastCraftResult.itemName + "  등급: " + lastCraftResult.grade);
+        Debug.Log("제작 완료: " + lastCraftResult.itemName +
+                  " / 등급: " + lastCraftResult.grade +
+                  " / imageUrl: " + lastCraftResult.imageUrl);
+
         ClearSelectedKeywords();
     }
-    // Craftpart/CraftManager.cs 수정
-// CraftManager 클래스 맨 아래 (마지막 } 직전)에 wrapper 클래스 추가
 
-// ── 서버 통신용 직렬화 클래스 (CraftManager 내부 전용) ──
     [System.Serializable]
-    private class CombineRequestBody { public int[] keyword_ids; }
+    private class CombineRequestBody
+    {
+        public int[] keyword_ids;
+    }
 
     [System.Serializable]
     private class CombineDataDto

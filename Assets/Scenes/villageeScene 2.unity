@@ -60834,7 +60834,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3eebc49e8163bb8409cd81c430643b4c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NPCServerManager
-  baseUrl: https://unfocusedly-pleurocarpous-gina.ngrok-free.dev
+  baseUrl: https://neural-positioning-migration-commissioners.trycloudflare.com
   npcListPath: /explore/npcs
   npcTalkPathFormat: '/explore/npcs/{0}/talk '
   npcTalkJsonBodyFormat: '{}'
@@ -62658,8 +62658,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fcef260336f5db74ea175a81d79d45a9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  baseUrl: https://neural-positioning-migration-commissioners.trycloudflare.com
   isServerConnected: 0
-  baseUrl: https://unfocusedly-pleurocarpous-gina.ngrok-free.dev/
+  verboseLog: 1
 --- !u!4 &1817414602
 Transform:
   m_ObjectHideFlags: 0

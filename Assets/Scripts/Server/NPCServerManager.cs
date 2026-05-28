@@ -9,7 +9,7 @@ using UnityEngine.Networking;
 /// <summary>
 /// NPC 서버 연동 매니저.
 /// - GET /explore/npcs 로 NPC 목록을 받아 NPCInteraction에 런타임 주입
-/// - NPC 대화 시 POST /explore/action 요청을 서버로 보냄
+/// - NPC 대화 시 POST /explore/npcs/{id}/talk 요청을 서버로 보냄
 /// - 성공 응답만 NPCInteraction 쪽에서 로컬 KeywordManager에 반영하도록 연결
 /// </summary>
 public class NPCServerManager : MonoBehaviour
@@ -18,16 +18,16 @@ public class NPCServerManager : MonoBehaviour
 
     [Header("서버 설정")]
     [Tooltip("예: https://xxxx.ngrok-free.dev")]
-    public string baseUrl = "https://unfocusedly-pleurocarpous-gina.ngrok-free.dev";
+    public string baseUrl = "https://neural-positioning-migration-commissioners.trycloudflare.com";
 
     [Tooltip("NPC 목록 조회 API")]
     public string npcListPath = "/explore/npcs";
 
     [Header("NPC 대화 API")]
-    [Tooltip("NPC 대화 endpoint. 현재 서버는 /explore/action 을 사용합니다.")]
+    [Tooltip("NPC 대화 endpoint. {0} 자리에 NPC 서버 id가 들어갑니다.")]
     public string npcTalkPathFormat = "/explore/action";
 
-    [Tooltip("대화 요청 body. {0} 자리에 NPC 서버 id가 들어갑니다.")]
+    [Tooltip("대화 요청 body. 현재 서버는 /explore/action에 { action_type:TALK, target_id:npcId }를 보냅니다.")]
     [TextArea(2, 4)]
     public string npcTalkJsonBodyFormat = "{\"action_type\":\"TALK\",\"target_id\":{0}}";
 
@@ -43,6 +43,9 @@ public class NPCServerManager : MonoBehaviour
 
     [Tooltip("요청/응답 로그 출력")]
     public bool verboseLog = true;
+
+    [Tooltip("켜면 ApiManager의 BaseUrl을 우선 사용합니다. 서버 주소를 한 곳에서 관리하기 위함입니다.")]
+    public bool useApiManagerBaseUrl = true;
 
     private readonly Dictionary<int, ServerNpcData> npcDataById = new Dictionary<int, ServerNpcData>();
     private readonly List<NPCInteraction> registeredNpcs = new List<NPCInteraction>();
@@ -368,10 +371,17 @@ public class NPCServerManager : MonoBehaviour
 
     private string BuildUrl(string path)
     {
-        if (string.IsNullOrEmpty(baseUrl))
+        string effectiveBaseUrl = baseUrl;
+
+        if (useApiManagerBaseUrl && ApiManager.Instance != null && !string.IsNullOrEmpty(ApiManager.Instance.BaseUrl))
+        {
+            effectiveBaseUrl = ApiManager.Instance.BaseUrl;
+        }
+
+        if (string.IsNullOrEmpty(effectiveBaseUrl))
             return path;
 
-        string trimmedBase = baseUrl.TrimEnd('/');
+        string trimmedBase = effectiveBaseUrl.TrimEnd('/');
         string fixedPath = string.IsNullOrEmpty(path) ? "" : path;
 
         if (!fixedPath.StartsWith("/"))
