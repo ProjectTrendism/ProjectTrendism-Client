@@ -57,6 +57,15 @@ public class AutoTileMapGenerator : MonoBehaviour
     public GameObject[] suspiciousNpcPrefabs;
     public GameObject[] travelerNpcPrefabs;
 
+    [Header("전체 NPC 프리팹 한 명씩 배치")]
+    public bool spawnEveryNpcPrefabOnce = true;
+
+    [Tooltip("여기에 넣은 NPC 프리팹은 맵 생성 시 전부 한 명씩 배치됩니다.")]
+    public GameObject[] allNpcPrefabs;
+
+    [Tooltip("전체 NPC 배치 시 NPC끼리 떨어질 거리")]
+    public int allNpcPersonalSpaceRadius = 1;
+
     [Header("NPC 배치 설정")]
     public int minVillageNpcCount = 3;
     public int maxVillageNpcCount = 5;
@@ -64,7 +73,16 @@ public class AutoTileMapGenerator : MonoBehaviour
     public int minThemeNpcCount = 1;
     public int maxThemeNpcCount = 3;
 
-    public int npcSortingOrder = 20;
+    public int npcSortingOrder = 30;
+
+    [Tooltip("켜면 같은 서버 NPC id를 가진 프리팹이 한 번의 맵 생성에서 중복 생성되지 않습니다.")]
+    public bool preventDuplicateNpcServerIds = true;
+
+    [Tooltip("켜면 NPC를 아무 칸이 아니라 길 주변 빈 칸에 우선 배치합니다.")]
+    public bool placeNpcNearRoad = true;
+
+    [Tooltip("NPC가 서로 너무 붙지 않도록 주변 칸을 같이 점유 처리합니다.")]
+    public int npcPersonalSpaceRadius = 1;
 
     [Header("자동 생성 부모")]
     public Transform runtimeObjectParent;
@@ -127,6 +145,7 @@ public class AutoTileMapGenerator : MonoBehaviour
     private readonly HashSet<Vector3Int> waterCells = new HashSet<Vector3Int>();
     private readonly HashSet<Vector3Int> reservedCells = new HashSet<Vector3Int>();
     private readonly HashSet<Vector3Int> occupiedObjectCells = new HashSet<Vector3Int>();
+    private readonly HashSet<int> usedNpcServerIds = new HashSet<int>();
 
     [ContextMenu("자동 맵 생성")]
     public void GenerateMap()
@@ -143,6 +162,7 @@ public class AutoTileMapGenerator : MonoBehaviour
         waterCells.Clear();
         reservedCells.Clear();
         occupiedObjectCells.Clear();
+        usedNpcServerIds.Clear();
 
         ChooseTheme();
 
@@ -960,7 +980,13 @@ public class AutoTileMapGenerator : MonoBehaviour
     {
         if (runtimeObjectParent == null)
         {
-            Debug.LogWarning("Runtime Object Parent가 연결되지 않았습니다.");
+            Debug.LogWarning("Runtime Object Parent가 연결되지 않았습니다. NPC 생성 실패");
+            return;
+        }
+
+        if (spawnEveryNpcPrefabOnce)
+        {
+            SpawnEveryNpcPrefabOnce();
             return;
         }
 
@@ -972,55 +998,25 @@ public class AutoTileMapGenerator : MonoBehaviour
 
     private void CreateVillageNPCs(Vector3Int center)
     {
-        int npcCount = Random.Range(minVillageNpcCount, maxVillageNpcCount + 1);
+        TrySpawnNPCGroup(
+            villageNpcPrefabs,
+            center,
+            12,
+            7,
+            minVillageNpcCount,
+            maxVillageNpcCount,
+            "VillageNPC"
+        );
 
-        int spawned = 0;
-        int maxTry = npcCount * 30;
-
-        for (int i = 0; i < maxTry; i++)
-        {
-            if (spawned >= npcCount)
-                break;
-
-            Vector3Int cellPos;
-
-            bool found = TryGetRandomCellAround(
-                center,
-                10,
-                6,
-                false,
-                out cellPos
-            );
-
-            if (!found)
-                continue;
-
-            if (IsTooCloseToOtherObjects(cellPos, 1))
-                continue;
-
-            GameObject prefab = GetRandomPrefab(villageNpcPrefabs);
-
-            if (prefab == null)
-                break;
-
-            GameObject npc = SpawnNPCPrefab(prefab, cellPos, "VillageNPC_" + spawned);
-
-            if (npc != null)
-                spawned++;
-        }
-
-        // 상인 NPC는 마을 근처에 1명 정도 고정적으로 배치
         TrySpawnNPCGroup(
             merchantNpcPrefabs,
             center,
-            7,
-            4,
+            8,
+            5,
             1,
             1,
             "MerchantNPC"
         );
-
-        Debug.Log("마을 NPC 생성 수: " + spawned + " / 목표: " + npcCount);
     }
 
     private void CreateThemeNPCs(Vector3Int villageCenter)
@@ -1033,8 +1029,8 @@ public class AutoTileMapGenerator : MonoBehaviour
                 TrySpawnNPCGroup(
                     travelerNpcPrefabs,
                     villageCenter,
-                    12,
-                    7,
+                    14,
+                    8,
                     1,
                     themeNpcCount,
                     "TravelerNPC"
@@ -1045,7 +1041,7 @@ public class AutoTileMapGenerator : MonoBehaviour
                 TrySpawnNPCGroup(
                     fisherNpcPrefabs,
                     GetCell(mapWidth - 12, mapHeight / 2),
-                    5,
+                    7,
                     5,
                     1,
                     themeNpcCount,
@@ -1057,8 +1053,8 @@ public class AutoTileMapGenerator : MonoBehaviour
                 TrySpawnNPCGroup(
                     travelerNpcPrefabs,
                     GetCell(7, mapHeight - 7),
-                    7,
-                    5,
+                    8,
+                    6,
                     1,
                     themeNpcCount,
                     "ForestTravelerNPC"
@@ -1067,7 +1063,7 @@ public class AutoTileMapGenerator : MonoBehaviour
                 TrySpawnNPCGroup(
                     suspiciousNpcPrefabs,
                     GetCell(5, 5),
-                    4,
+                    5,
                     4,
                     1,
                     1,
@@ -1079,7 +1075,7 @@ public class AutoTileMapGenerator : MonoBehaviour
                 TrySpawnNPCGroup(
                     farmerNpcPrefabs,
                     GetCell(mapWidth - 11, 7),
-                    7,
+                    8,
                     5,
                     1,
                     themeNpcCount,
@@ -1091,7 +1087,7 @@ public class AutoTileMapGenerator : MonoBehaviour
                 TrySpawnNPCGroup(
                     fisherNpcPrefabs,
                     GetCell(mapWidth - 13, 8),
-                    6,
+                    7,
                     5,
                     1,
                     themeNpcCount,
@@ -1103,7 +1099,7 @@ public class AutoTileMapGenerator : MonoBehaviour
                 TrySpawnNPCGroup(
                     suspiciousNpcPrefabs,
                     GetCell(mapWidth - 7, mapHeight - 6),
-                    5,
+                    6,
                     5,
                     1,
                     themeNpcCount,
@@ -1113,7 +1109,7 @@ public class AutoTileMapGenerator : MonoBehaviour
                 TrySpawnNPCGroup(
                     travelerNpcPrefabs,
                     GetCell(7, mapHeight - 6),
-                    5,
+                    6,
                     4,
                     1,
                     1,
@@ -1134,37 +1130,49 @@ public class AutoTileMapGenerator : MonoBehaviour
     )
     {
         if (npcPrefabs == null || npcPrefabs.Length == 0)
+        {
+            Debug.LogWarning(baseName + " NPC Prefabs가 비어 있습니다.");
             return;
+        }
 
         int count = Random.Range(minCount, maxCount + 1);
-
         int spawned = 0;
-        int maxTry = count * 40;
+        int maxTry = count * 80;
 
         for (int i = 0; i < maxTry; i++)
         {
             if (spawned >= count)
                 break;
 
-            Vector3Int cellPos;
+            GameObject prefab = GetRandomNpcPrefabWithoutDuplicateId(npcPrefabs);
 
-            bool found = TryGetRandomCellAround(
-                center,
-                radiusX,
-                radiusY,
-                false,
-                out cellPos
-            );
+            if (prefab == null)
+            {
+                Debug.LogWarning(baseName + "에서 사용 가능한 NPC 프리팹이 없습니다. 중복 serverId 또는 배열 비어있음");
+                break;
+            }
+
+            Vector3Int cellPos;
+            bool found;
+
+            if (placeNpcNearRoad)
+            {
+                found = TryGetNpcCellNearRoadAround(center, radiusX, radiusY, out cellPos);
+
+                if (!found)
+                {
+                    found = TryGetRandomCellAround(center, radiusX, radiusY, false, out cellPos);
+                }
+            }
+            else
+            {
+                found = TryGetRandomCellAround(center, radiusX, radiusY, false, out cellPos);
+            }
 
             if (!found)
                 continue;
 
-            if (IsTooCloseToOtherObjects(cellPos, 1))
-                continue;
-
-            GameObject prefab = GetRandomPrefab(npcPrefabs);
-
-            if (prefab == null)
+            if (IsTooCloseToOtherObjects(cellPos, npcPersonalSpaceRadius))
                 continue;
 
             GameObject npc = SpawnNPCPrefab(prefab, cellPos, baseName + "_" + spawned);
@@ -1184,6 +1192,11 @@ public class AutoTileMapGenerator : MonoBehaviour
         if (!CanPlaceObjectAt(cellPos, false))
             return null;
 
+        int prefabServerId = GetNpcServerIdFromPrefab(prefab);
+
+        if (preventDuplicateNpcServerIds && prefabServerId > 0 && usedNpcServerIds.Contains(prefabServerId))
+            return null;
+
         Vector3 worldPos = GetWorldPositionFromCell(cellPos);
         worldPos.z = 0f;
 
@@ -1192,9 +1205,123 @@ public class AutoTileMapGenerator : MonoBehaviour
 
         SetSortingOrderRecursive(npc, npcSortingOrder);
 
+        NPCInteraction interaction = npc.GetComponentInChildren<NPCInteraction>(true);
+        if (interaction != null && interaction.GetNpcServerId() > 0)
+        {
+            usedNpcServerIds.Add(interaction.GetNpcServerId());
+        }
+
         occupiedObjectCells.Add(cellPos);
+        MarkOccupiedAround(cellPos, npcPersonalSpaceRadius, npcPersonalSpaceRadius);
 
         return npc;
+    }
+
+    private GameObject GetRandomNpcPrefabWithoutDuplicateId(GameObject[] npcPrefabs)
+    {
+        if (npcPrefabs == null || npcPrefabs.Length == 0)
+            return null;
+
+        List<GameObject> candidates = new List<GameObject>();
+
+        for (int i = 0; i < npcPrefabs.Length; i++)
+        {
+            GameObject prefab = npcPrefabs[i];
+
+            if (prefab == null)
+                continue;
+
+            int serverId = GetNpcServerIdFromPrefab(prefab);
+
+            if (preventDuplicateNpcServerIds && serverId > 0 && usedNpcServerIds.Contains(serverId))
+                continue;
+
+            candidates.Add(prefab);
+        }
+
+        if (candidates.Count == 0)
+            return null;
+
+        return candidates[Random.Range(0, candidates.Count)];
+    }
+
+    private int GetNpcServerIdFromPrefab(GameObject prefab)
+    {
+        if (prefab == null)
+            return 0;
+
+        NPCInteraction interaction = prefab.GetComponentInChildren<NPCInteraction>(true);
+
+        if (interaction == null)
+            return 0;
+
+        return interaction.GetNpcServerId();
+    }
+
+    private bool TryGetNpcCellNearRoadAround(Vector3Int center, int radiusX, int radiusY, out Vector3Int result)
+    {
+        int maxTry = 160;
+
+        Vector3Int[] directions =
+        {
+            new Vector3Int(1, 0, 0),
+            new Vector3Int(-1, 0, 0),
+            new Vector3Int(0, 1, 0),
+            new Vector3Int(0, -1, 0),
+            new Vector3Int(1, 1, 0),
+            new Vector3Int(-1, 1, 0),
+            new Vector3Int(1, -1, 0),
+            new Vector3Int(-1, -1, 0)
+        };
+
+        for (int i = 0; i < maxTry; i++)
+        {
+            Vector3Int roadCell = GetRandomRoadCellAround(center, radiusX, radiusY);
+
+            if (roadCell == Vector3Int.zero)
+                continue;
+
+            ShuffleArray(directions);
+
+            for (int d = 0; d < directions.Length; d++)
+            {
+                Vector3Int candidate = roadCell + directions[d];
+
+                if (!CanPlaceObjectAt(candidate, false))
+                    continue;
+
+                if (IsTooCloseToOtherObjects(candidate, npcPersonalSpaceRadius))
+                    continue;
+
+                result = candidate;
+                return true;
+            }
+        }
+
+        result = Vector3Int.zero;
+        return false;
+    }
+
+    private Vector3Int GetRandomRoadCellAround(Vector3Int center, int radiusX, int radiusY)
+    {
+        if (roadCells == null || roadCells.Count == 0)
+            return Vector3Int.zero;
+
+        List<Vector3Int> candidates = new List<Vector3Int>();
+
+        foreach (Vector3Int roadCell in roadCells)
+        {
+            if (Mathf.Abs(roadCell.x - center.x) <= radiusX &&
+                Mathf.Abs(roadCell.y - center.y) <= radiusY)
+            {
+                candidates.Add(roadCell);
+            }
+        }
+
+        if (candidates.Count == 0)
+            return Vector3Int.zero;
+
+        return candidates[Random.Range(0, candidates.Count)];
     }
 
     private Vector3Int GetVillageCenterByTheme()
@@ -1605,5 +1732,185 @@ public class AutoTileMapGenerator : MonoBehaviour
         result = Vector3Int.zero;
         return false;
     }
+
+    private void SpawnEveryNpcPrefabOnce()
+    {
+        if (allNpcPrefabs == null || allNpcPrefabs.Length == 0)
+        {
+            Debug.LogWarning("All Npc Prefabs 배열이 비어 있습니다. 전체 NPC 배치를 건너뜁니다.");
+            return;
+        }
+
+        List<GameObject> npcList = new List<GameObject>();
+
+        for (int i = 0; i < allNpcPrefabs.Length; i++)
+        {
+            if (allNpcPrefabs[i] != null)
+            {
+                npcList.Add(allNpcPrefabs[i]);
+            }
+        }
+
+        ShuffleList(npcList);
+
+        int spawned = 0;
+
+        for (int i = 0; i < npcList.Count; i++)
+        {
+            GameObject prefab = npcList[i];
+
+            Vector3Int cellPos;
+            bool found = TryFindNpcSpawnCell(out cellPos);
+
+            if (!found)
+            {
+                Debug.LogWarning("NPC 배치 가능한 위치를 찾지 못했습니다: " + prefab.name);
+                continue;
+            }
+
+            GameObject npc = SpawnNpcPrefabDirect(prefab, cellPos, prefab.name + "_Spawned");
+
+            if (npc != null)
+            {
+                spawned++;
+            }
+        }
+
+        Debug.Log("전체 NPC 프리팹 배치 완료: " + spawned + " / " + npcList.Count);
+    }
+    private bool TryFindNpcSpawnCell(out Vector3Int result)
+    {
+        // 1순위: 길 주변 빈 칸
+        if (TryFindCellNearRoad(out result))
+        {
+            return true;
+        }
+
+        // 2순위: 마을 중심 주변
+        Vector3Int villageCenter = GetVillageCenterByTheme();
+
+        for (int i = 0; i < 100; i++)
+        {
+            Vector3Int cellPos;
+
+            bool found = TryGetRandomCellAround(
+                villageCenter,
+                15,
+                9,
+                false,
+                out cellPos
+            );
+
+            if (!found)
+                continue;
+
+            if (!CanPlaceObjectAt(cellPos, false))
+                continue;
+
+            if (IsTooCloseToOtherObjects(cellPos, allNpcPersonalSpaceRadius))
+                continue;
+
+            result = cellPos;
+            return true;
+        }
+
+        // 3순위: 맵 전체 랜덤
+        for (int i = 0; i < 200; i++)
+        {
+            int x = Random.Range(startX + 2, endX - 2);
+            int y = Random.Range(startY + 2, endY - 2);
+
+            Vector3Int cellPos = new Vector3Int(x, y, 0);
+
+            if (!CanPlaceObjectAt(cellPos, false))
+                continue;
+
+            if (IsTooCloseToOtherObjects(cellPos, allNpcPersonalSpaceRadius))
+                continue;
+
+            result = cellPos;
+            return true;
+        }
+
+        result = Vector3Int.zero;
+        return false;
+    }
+
+    private bool TryFindCellNearRoad(out Vector3Int result)
+    {
+        result = Vector3Int.zero;
+
+        if (roadCells == null || roadCells.Count == 0)
+            return false;
+
+        Vector3Int[] directions =
+        {
+            new Vector3Int(1, 0, 0),
+            new Vector3Int(-1, 0, 0),
+            new Vector3Int(0, 1, 0),
+            new Vector3Int(0, -1, 0),
+            new Vector3Int(1, 1, 0),
+            new Vector3Int(1, -1, 0),
+            new Vector3Int(-1, 1, 0),
+            new Vector3Int(-1, -1, 0)
+        };
+
+        int maxTry = 300;
+
+        for (int i = 0; i < maxTry; i++)
+        {
+            Vector3Int roadCell = GetRandomRoadCell();
+
+            if (roadCell == Vector3Int.zero)
+                continue;
+
+            Vector3Int dir = directions[Random.Range(0, directions.Length)];
+            Vector3Int cellPos = roadCell + dir;
+
+            if (!CanPlaceObjectAt(cellPos, false))
+                continue;
+
+            if (IsTooCloseToOtherObjects(cellPos, allNpcPersonalSpaceRadius))
+                continue;
+
+            result = cellPos;
+            return true;
+        }
+
+        return false;
+    }
+    private GameObject SpawnNpcPrefabDirect(GameObject prefab, Vector3Int cellPos, string objectName)
+    {
+        if (prefab == null)
+            return null;
+
+        if (!CanPlaceObjectAt(cellPos, false))
+            return null;
+
+        Vector3 worldPos = GetWorldPositionFromCell(cellPos);
+        worldPos.z = 0f;
+
+        GameObject npc = Instantiate(prefab, worldPos, Quaternion.identity, runtimeObjectParent);
+        npc.name = objectName;
+
+        SetSortingOrderRecursive(npc, npcSortingOrder);
+
+        occupiedObjectCells.Add(cellPos);
+        MarkOccupiedAround(cellPos, allNpcPersonalSpaceRadius, allNpcPersonalSpaceRadius);
+
+        return npc;
+    }
+    private void ShuffleList<T>(List<T> list)
+    {
+        for (int i = 0; i < list.Count; i++)
+        {
+            int randomIndex = Random.Range(i, list.Count);
+
+            T temp = list[i];
+            list[i] = list[randomIndex];
+            list[randomIndex] = temp;
+        }
+    }
+
 
 }

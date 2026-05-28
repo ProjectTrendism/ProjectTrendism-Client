@@ -124,45 +124,79 @@ void LoadLocalKeywords()
 
     Debug.Log("로컬 키워드 " + masterKeywords.Count + "개 로드 완료!");
 }
-
     // 탐험에서 키워드 획득 시 호출
     public void AddKeyword(int serverId, string name, KeywordType type)
-{
-    if (string.IsNullOrEmpty(name))
     {
-        Debug.LogWarning("이름이 없는 키워드는 추가하지 않습니다.");
-        return;
-    }
+        if (string.IsNullOrEmpty(name))
+        {
+            Debug.LogWarning("[AddKeyword] 이름이 없는 키워드는 추가하지 않습니다.");
+            return;
+        }
 
-    // 이름 기준으로 중복 확인
-    KeywordData existing = playerKeywords.Find(k => k.keywordName == name);
+        Debug.Log($"[AddKeyword] 요청: name={name} / serverId={serverId} / type={type}");
 
-    if (existing != null)
-    {
-        Debug.Log("이미 보유한 키워드 다시 획득: " + name);
+        // 1순위: 서버 ID 기준 중복 방지
+        if (serverId > 0)
+        {
+            KeywordData existingById = playerKeywords.Find(k => k.serverId == serverId);
+            if (existingById != null)
+            {
+                Debug.Log($"[AddKeyword] 이미 보유한 키워드(ID 기준): {existingById.keywordName} / serverId={existingById.serverId}");
+                UpdateKeywordUI();
+                return;
+            }
+        }
+
+        // 2순위: 이름 기준 중복 방지
+        KeywordData existingByName = playerKeywords.Find(k => k.keywordName == name);
+        if (existingByName != null)
+        {
+            Debug.Log($"[AddKeyword] 이미 보유한 키워드(이름 기준): {existingByName.keywordName} / serverId={existingByName.serverId}");
+            UpdateKeywordUI();
+            return;
+        }
+
+        KeywordData master = null;
+
+        // 서버 ID가 있으면 무조건 ID로 먼저 찾는다.
+        if (serverId > 0)
+        {
+            master = GetMasterKeyword(serverId);
+        }
+
+        // ID 매칭 실패 시 이름으로 보조 매칭
+        if (master == null)
+        {
+            master = GetMasterKeywordByName(name);
+        }
+
+        if (master != null)
+        {
+            KeywordData copied = CopyKeyword(master);
+            playerKeywords.Add(copied);
+
+            Debug.Log($"[AddKeyword] 마스터 키워드 추가 성공: {copied.keywordName} / serverId={copied.serverId} / type={copied.keywordType}");
+        }
+        else
+        {
+            KeywordData data = new KeywordData(name, type);
+
+            // 중요: 서버 ID가 없으면 0으로 둔다.
+            // 절대 GetHashCode로 가짜 서버 ID를 만들지 않는다.
+            data.serverId = serverId;
+            data.basePrice = 10;
+            data.popularity = 10;
+            data.freshness = 10;
+            data.stability = 10;
+
+            playerKeywords.Add(data);
+
+            Debug.LogWarning($"[AddKeyword] 마스터에 없는 키워드 추가: {data.keywordName} / serverId={data.serverId} / type={data.keywordType}");
+        }
+
         UpdateKeywordUI();
-        return;
+        Debug.Log($"[AddKeyword] 현재 보유 키워드 개수: {playerKeywords.Count}");
     }
-
-    KeywordData master = GetMasterKeywordByName(name);
-
-    if (master != null)
-    {
-        playerKeywords.Add(master);
-    }
-    else
-    {
-        KeywordData data = new KeywordData(name, type);
-
-        // serverId가 0이면 이름 기반 임시 ID 부여
-        data.serverId = serverId != 0 ? serverId : Mathf.Abs(name.GetHashCode());
-
-        playerKeywords.Add(data);
-    }
-
-    UpdateKeywordUI();
-    Debug.Log("키워드 획득: " + name);
-}
 
     // serverId로 마스터 키워드 찾기 (NPC 드랍 시 사용)
     public KeywordData GetMasterKeyword(int serverId)
@@ -174,6 +208,22 @@ void LoadLocalKeywords()
     {
         return masterKeywords.Find(k => k.keywordName == name);
     }
+
+
+    private KeywordData CopyKeyword(KeywordData original)
+    {
+        KeywordData copy = new KeywordData(original.keywordName, original.keywordType);
+
+        copy.serverId = original.serverId;
+        copy.description = original.description;
+        copy.basePrice = original.basePrice;
+        copy.popularity = original.popularity;
+        copy.freshness = original.freshness;
+        copy.stability = original.stability;
+
+        return copy;
+    }
+
 
     private void UpdateKeywordUI()
     {
@@ -222,12 +272,19 @@ void LoadLocalKeywords()
 
     KeywordType ConvertCategory(string category)
     {
-        switch (category)
+        if (string.IsNullOrEmpty(category))
+            return KeywordType.Base;
+
+        string upper = category.ToUpper();
+
+        switch (upper)
         {
             case "BASE": return KeywordType.Base;
             case "STYLE": return KeywordType.Style;
             case "CONCEPT": return KeywordType.Concept;
-            default: return KeywordType.Base;
+            default:
+                Debug.LogWarning("[ConvertCategory] 알 수 없는 category: " + category + " -> Base로 처리");
+                return KeywordType.Base;
         }
     }
 

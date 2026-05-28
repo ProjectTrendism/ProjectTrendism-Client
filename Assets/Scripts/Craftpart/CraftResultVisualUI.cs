@@ -1,3 +1,4 @@
+/*
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -86,6 +87,116 @@ public class CraftResultVisualUI : MonoBehaviour
         if (result.grade == "B")
             return new Color(0.7f, 0.9f, 1f, 1f);
 
+        return Color.white;
+    }
+
+    public void Clear()
+    {
+        if (resultItemImage != null)
+        {
+            resultItemImage.sprite = defaultResultSprite;
+            resultItemImage.color = Color.white;
+            resultItemImage.gameObject.SetActive(false);
+        }
+    }
+}
+*/
+// Craftpart/CraftResultVisualUI.cs 교체
+
+using UnityEngine;
+using UnityEngine.UI;
+
+public class CraftResultVisualUI : MonoBehaviour
+{
+    [Header("결과 이미지")]
+    public Image resultItemImage;
+
+    [Header("임시 기본 이미지")]
+    public Sprite defaultResultSprite;
+
+    [Header("나중에 AI 이미지가 들어올 자리")]
+    public Sprite aiGeneratedSprite;
+
+    public void Show(CraftedItemResult result)
+    {
+        if (result == null) { Clear(); return; }
+        if (resultItemImage == null)
+        {
+            Debug.LogWarning("ResultItemImage가 연결되지 않았습니다.");
+            return;
+        }
+
+        resultItemImage.gameObject.SetActive(true);
+
+        // 1) 서버에서 받은 URL이 있으면 그것부터 시도
+        if (!string.IsNullOrEmpty(result.imageUrl) && ApiManager.Instance != null)
+        {
+            StartCoroutine(ApiManager.Instance.GetTexture(result.imageUrl,
+                (tex) =>
+                {
+                    resultItemImage.sprite = Sprite.Create(
+                        tex,
+                        new Rect(0, 0, tex.width, tex.height),
+                        new Vector2(0.5f, 0.5f)
+                    );
+                    resultItemImage.color = Color.white;
+                    Debug.Log("[CraftResultVisualUI] 서버 이미지 로드 OK: " + result.imageUrl);
+                },
+                (err) =>
+                {
+                    Debug.LogWarning("[CraftResultVisualUI] 서버 이미지 실패, fallback: " + err);
+                    FallbackVisual(result);
+                }
+            ));
+            return;
+        }
+
+        // 2) URL 없으면 기존 로컬 fallback
+        FallbackVisual(result);
+    }
+
+    private void FallbackVisual(CraftedItemResult result)
+    {
+        if (aiGeneratedSprite != null)
+        {
+            resultItemImage.sprite = aiGeneratedSprite;
+            resultItemImage.color = Color.white;
+            return;
+        }
+
+        if (defaultResultSprite != null)
+            resultItemImage.sprite = defaultResultSprite;
+
+        resultItemImage.color = GetTemporaryColor(result);
+    }
+
+    private Color GetTemporaryColor(CraftedItemResult result)
+    {
+        string allKeywords = "";
+
+        if (!string.IsNullOrEmpty(result.baseKeywordName))
+            allKeywords += result.baseKeywordName;
+        if (!string.IsNullOrEmpty(result.styleKeywordName))
+            allKeywords += result.styleKeywordName;
+        if (!string.IsNullOrEmpty(result.conceptKeywordName))
+            allKeywords += result.conceptKeywordName;
+
+        if (allKeywords.Contains("차가운") || allKeywords.Contains("가가운"))
+            return new Color(0.45f, 0.75f, 1f, 1f);
+        if (allKeywords.Contains("매운"))
+            return new Color(1f, 0.35f, 0.25f, 1f);
+        if (allKeywords.Contains("가성비"))
+            return new Color(0.45f, 1f, 0.45f, 1f);
+        if (allKeywords.Contains("럭셔리"))
+            return new Color(1f, 0.85f, 0.25f, 1f);
+        if (allKeywords.Contains("가죽"))
+            return new Color(0.75f, 0.5f, 0.3f, 1f);
+        if (allKeywords.Contains("강철"))
+            return new Color(0.65f, 0.7f, 0.85f, 1f);
+
+        if (result.grade == "S") return new Color(1f, 0.8f, 0.2f, 1f);
+        if (result.grade == "A") return new Color(0.8f, 0.6f, 1f, 1f);
+        if (result.grade == "B") return new Color(0.7f, 0.9f, 1f, 1f);
         return Color.white;
     }
 

@@ -271,6 +271,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df0cda2d39e81d242bd9d521cb6fb22f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NPCInteraction
+  npcServerId: 7
+  useServer: 1
+  allowLocalFallback: 1
   npcName: "\uC6A9\uBCD1"
   zoneName: "\uB300\uC7A5\uAC04 \uC55E"
   dialogueMessage: "\uC804\uD22C\uC6A9\uC774 \uC544\uB2C8\uC5B4\uB3C4 \uD2BC\uD2BC\uD55C
@@ -289,6 +292,12 @@ MonoBehaviour:
   trendWeight: 75
   rumorType: "\uC18C\uC7AC \uC18C\uBB38"
   giveOnlyOnce: 1
+  verboseLog: 1
+  portraitId: 
+  isActive: 1
+  talked: 0
+  reliabilityKnown: 0
+  perceivedReliability: 0
 --- !u!212 &1362134299434448099
 SpriteRenderer:
   serializedVersion: 2

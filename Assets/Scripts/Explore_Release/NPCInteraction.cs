@@ -180,12 +180,6 @@ using UnityEngine;
 /// <summary>
 /// NPC 상호작용 스크립트.
 /// 서버가 있으면 서버를 먼저 거치고, 서버가 없거나 실패하면 로컬 fallback 값으로 기존처럼 동작합니다.
-/// 
-/// 핵심 흐름:
-/// 1. Play 시작 시 GET /explore/npcs 응답이 있으면 NPC 이름/지역/시즌대사/신뢰도/talked를 서버값으로 주입
-/// 2. NPC와 대화하면 POST /explore/npcs/{id}/talk 먼저 시도
-/// 3. 서버 성공 시 서버가 내려준 granted_keyword만 로컬 KeywordManager에 동기화
-/// 4. 서버 실패 시 allowLocalFallback이 켜져 있으면 기존 인스펙터 값으로 키워드/소문 지급
 /// </summary>
 public class NPCInteraction : MonoBehaviour
 {
@@ -233,6 +227,9 @@ public class NPCInteraction : MonoBehaviour
     [Header("반복 대화 설정")]
     public bool giveOnlyOnce = true;
 
+    [Header("디버그")]
+    public bool verboseLog = true;
+
     [Header("서버 주입 데이터 - 확인용")]
     [SerializeField] private string portraitId = "";
     [SerializeField] private bool isActive = true;
@@ -243,6 +240,7 @@ public class NPCInteraction : MonoBehaviour
     private bool playerInRange = false;
     private bool isTalkingToServer = false;
     private bool hasLocalRewardGiven = false;
+    private bool isCurrentDialogueNpc = false;
 
     private DialogueManager dialogueManager;
     private UIManager uiManager;
@@ -254,15 +252,29 @@ public class NPCInteraction : MonoBehaviour
         dialogueManager = FindObjectOfType<DialogueManager>();
         uiManager = FindObjectOfType<UIManager>();
         keywordManager = FindObjectOfType<KeywordManager>();
-        npcServerManager = FindObjectOfType<NPCServerManager>();
+
+        ResolveNpcServerManager();
 
         if (useServer && npcServerManager != null)
         {
             npcServerManager.RegisterNPC(this);
+
+            if (verboseLog)
+            {
+                Debug.Log($"[NPCInteraction] 서버 매니저 등록 완료 / NPC={npcName}, npcServerId={npcServerId}");
+            }
         }
         else if (useServer && npcServerManager == null)
         {
-            Debug.LogWarning($"NPCServerManager가 씬에 없습니다. NPC '{npcName}'은 로컬 fallback 값으로 동작합니다.");
+            Debug.LogWarning($"[NPCInteraction] NPCServerManager가 씬에 없습니다. NPC '{npcName}'은 로컬 fallback 값으로 동작합니다.");
+        }
+
+        if (useServer && npcServerId <= 0)
+        {
+            Debug.LogWarning(
+                $"[NPCInteraction] NPC '{npcName}'의 npcServerId가 {npcServerId}입니다. " +
+                $"이 상태에서는 서버 대화 요청을 보낼 수 없습니다. 서버 /explore/npcs 응답 id와 맞춰주세요."
+            );
         }
     }
 
@@ -276,12 +288,27 @@ public class NPCInteraction : MonoBehaviour
 
     private void Update()
     {
-        if (!playerInRange) return;
+        if (!playerInRange)
+            return;
 
         if (Input.GetKeyDown(KeyCode.E))
         {
             TryInteract();
         }
+    }
+
+    private void ResolveNpcServerManager()
+    {
+        if (npcServerManager != null)
+            return;
+
+        if (NPCServerManager.Instance != null)
+        {
+            npcServerManager = NPCServerManager.Instance;
+            return;
+        }
+
+        npcServerManager = FindObjectOfType<NPCServerManager>();
     }
 
     public int GetNpcServerId()
@@ -308,22 +335,26 @@ public class NPCInteraction : MonoBehaviour
     {
         if (useServer)
         {
-            if (!reliabilityKnown) return "???";
+            if (!reliabilityKnown)
+                return "???";
+
             return perceivedReliability.ToString();
         }
 
         return reliability.ToString();
     }
 
-    /// <summary>
-    /// NPCServerManager가 GET /explore/npcs 응답을 받은 뒤 호출합니다.
-    /// 여기서 인스펙터 값을 서버 값으로 덮어씁니다.
-    /// </summary>
     public void ApplyServerData(ServerNpcData data)
     {
-        if (data == null) return;
+        if (data == null)
+            return;
 
-        if (!string.IsNullOrEmpty(data.name))
+        
+        npcServerId = data.id;
+
+        Debug.Log($"[NPCInteraction] ApplyServerData ID 주입 확인 / npcName={data.name}, data.id={data.id}, npcServerId={npcServerId}");
+
+if (!string.IsNullOrEmpty(data.name))
         {
             npcName = data.name;
         }
@@ -338,9 +369,18 @@ public class NPCInteraction : MonoBehaviour
             portraitId = data.portrait_id;
         }
 
-        if (!string.IsNullOrEmpty(data.season_dialogue))
+        string serverDialogue = GetServerDialogueFromNpcData(data);
+
+        if (!string.IsNullOrEmpty(serverDialogue))
         {
-            dialogueMessage = data.season_dialogue;
+            dialogueMessage = serverDialogue;
+        }
+        else
+        {
+            Debug.LogWarning(
+                $"[NPCInteraction] 서버 NPC 대화문이 비어 있습니다. " +
+                $"id={data.id}, name={data.name}, 현재 대사 유지={dialogueMessage}"
+            );
         }
 
         isActive = data.is_active;
@@ -351,34 +391,71 @@ public class NPCInteraction : MonoBehaviour
 
         gameObject.SetActive(isActive);
 
-        Debug.Log($"NPC 서버 데이터 적용 완료: id={data.id}, name={npcName}, talked={talked}, reliability={GetReliabilityText()}");
+        Debug.Log(
+            $"[NPCInteraction] NPC 서버 데이터 적용 완료: " +
+            $"id={data.id}, name={npcName}, dialogue={dialogueMessage}, talked={talked}, reliability={GetReliabilityText()}"
+        );
+
+        RefreshOpenedDialogue();
+    }
+
+    private string GetServerDialogueFromNpcData(ServerNpcData data)
+    {
+        if (data == null)
+            return "";
+
+        if (!string.IsNullOrEmpty(data.season_dialogue))
+            return data.season_dialogue;
+
+        if (!string.IsNullOrEmpty(data.dialogue))
+            return data.dialogue;
+
+        if (!string.IsNullOrEmpty(data.message))
+            return data.message;
+
+        if (!string.IsNullOrEmpty(data.talk_text))
+            return data.talk_text;
+
+        if (!string.IsNullOrEmpty(data.line))
+            return data.line;
+
+        return "";
     }
 
     private void TryInteract()
     {
-        if (!isActive) return;
+        if (!isActive)
+            return;
 
         if (dialogueManager == null)
         {
-            Debug.LogWarning("DialogueManager를 찾지 못했습니다.");
+            Debug.LogWarning("[NPCInteraction] DialogueManager를 찾지 못했습니다.");
             return;
         }
 
         if (dialogueManager.IsDialogueOpen())
         {
             dialogueManager.CloseDialogue();
+            isCurrentDialogueNpc = false;
             return;
         }
 
+        ResolveNpcServerManager();
+
+        Debug.Log($"[NPCInteraction] 대화창 열기 / npcName={npcName}, npcServerId={npcServerId}, dialogue={dialogueMessage}, reliability={GetReliabilityText()}");
+        
+        isCurrentDialogueNpc = true;
+        
         dialogueManager.OpenDialogue(GetDialogueText());
 
         if (giveOnlyOnce && IsRewardAlreadyGiven())
         {
-            Debug.Log($"이미 대화 보상 지급 완료: {npcName}");
+            Debug.Log($"[NPCInteraction] 이미 대화 보상 지급 완료: {npcName}");
             return;
         }
 
-        if (isTalkingToServer) return;
+        if (isTalkingToServer)
+            return;
 
         StartCoroutine(ProcessTalkReward());
     }
@@ -390,44 +467,92 @@ public class NPCInteraction : MonoBehaviour
 
     private bool IsRewardAlreadyGiven()
     {
-        // 서버 모드에서는 서버의 talked 값을 기준으로 보고,
-        // 로컬 fallback 모드에서는 hasLocalRewardGiven 값을 기준으로 봅니다.
-        if (useServer && talked) return true;
-        if (hasLocalRewardGiven) return true;
+        if (useServer && talked)
+            return true;
+
+        if (hasLocalRewardGiven)
+            return true;
+
         return false;
+    }
+
+    private void RefreshOpenedDialogue()
+    {
+        if (dialogueManager == null)
+            return;
+
+        if (!dialogueManager.IsDialogueOpen())
+            return;
+
+        // 중요:
+        // RefreshNpcList()는 모든 NPC에 ApplyServerData()를 호출한다.
+        // 그래서 현재 대화 중인 NPC가 아닌 다른 NPC가 대화창을 덮어쓰지 못하게 막는다.
+        if (!isCurrentDialogueNpc)
+            return;
+
+        if (!playerInRange)
+            return;
+
+        dialogueManager.CloseDialogue();
+        dialogueManager.OpenDialogue(GetDialogueText());
+
+        Debug.Log($"[NPCInteraction] 현재 대화 NPC UI 갱신 완료 / npcName={npcName}, npcServerId={npcServerId}, dialogue={dialogueMessage}");
     }
 
     private IEnumerator ProcessTalkReward()
     {
         isTalkingToServer = true;
 
+        if (verboseLog)
+        {
+            Debug.Log(
+                $"[NPCInteraction] 대화 보상 처리 시작\n" +
+                $"NPC: {npcName}\n" +
+                $"useServer: {useServer}\n" +
+                $"npcServerId: {npcServerId}\n" +
+                $"npcServerManager 존재: {npcServerManager != null}\n" +
+                $"allowLocalFallback: {allowLocalFallback}"
+            );
+        }
+
         bool serverSuccess = false;
 
-        if (CanUseServerTalk())
+        ResolveNpcServerManager();
+
+        string serverBlockReason = GetServerTalkBlockReason();
+
+        if (string.IsNullOrEmpty(serverBlockReason))
         {
             ServerNpcTalkResponse response = null;
 
-            yield return npcServerManager.TalkToNpc(
+            Debug.Log($"[NPCInteraction] 서버 대화 시도 / npcServerId={npcServerId}, npcName={npcName}");
+
+            yield return StartCoroutine(npcServerManager.TalkToNpc(
                 npcServerId,
                 result =>
                 {
                     response = result;
                 }
-            );
+            ));
 
             serverSuccess = response != null && response.status == "success";
 
             if (serverSuccess)
             {
+                Debug.Log($"[NPCInteraction] 서버 대화 성공 / npcName={npcName}");
+
                 ApplyServerTalkResponse(response);
 
-                // 서버에서 talked / reliability / season_dialogue가 바뀔 수 있으니 최신 목록을 다시 받습니다.
-                yield return npcServerManager.RefreshNpcList();
+                yield return StartCoroutine(npcServerManager.RefreshNpcList());
             }
             else
             {
-                Debug.LogWarning($"NPC 대화 서버 처리 실패: npcServerId={npcServerId}");
+                Debug.LogWarning($"[NPCInteraction] NPC 대화 서버 처리 실패 / npcServerId={npcServerId}, npcName={npcName}");
             }
+        }
+        else
+        {
+            Debug.LogWarning($"[NPCInteraction] 서버 대화 시도 불가: {serverBlockReason} / npcName={npcName}");
         }
 
         if (!serverSuccess)
@@ -448,66 +573,194 @@ public class NPCInteraction : MonoBehaviour
         isTalkingToServer = false;
     }
 
-    private bool CanUseServerTalk()
+    private string GetServerTalkBlockReason()
     {
-        if (!useServer) return false;
-        if (npcServerId <= 0) return false;
-        if (npcServerManager == null) return false;
-        return true;
+        if (!useServer)
+            return "useServer가 꺼져 있음";
+
+        if (npcServerId <= 0)
+            return "npcServerId가 0 이하임. ApplyServerData에서 서버 NPC id가 주입되지 않았거나 서버 data.id가 0임";
+
+        if (npcServerManager == null)
+            return "NPCServerManager를 찾지 못함";
+
+        return "";
+    }
+
+    private string GetServerDialogueFromTalkData(ServerNpcTalkData data)
+    {
+        if (data == null)
+            return "";
+
+        if (!string.IsNullOrEmpty(data.dialogue))
+            return data.dialogue;
+
+        if (!string.IsNullOrEmpty(data.message))
+            return data.message;
+
+        if (!string.IsNullOrEmpty(data.talk_text))
+            return data.talk_text;
+
+        if (!string.IsNullOrEmpty(data.line))
+            return data.line;
+
+        if (!string.IsNullOrEmpty(data.season_dialogue))
+            return data.season_dialogue;
+
+        return "";
     }
 
     private void ApplyServerTalkResponse(ServerNpcTalkResponse response)
     {
         if (response == null || response.data == null)
         {
-            Debug.LogWarning("서버 NPC 대화 응답 data가 비어 있습니다.");
+            Debug.LogWarning("[NPCInteraction] 서버 NPC 대화 응답 data가 비어 있습니다.");
             return;
         }
 
-        talked = response.data.talked;
+        // /explore/action 응답에는 talked 필드가 없을 수 있으므로 성공 시 talked 처리
+        talked = response.data.talked || response.data.success;
 
-        // 서버가 확정해서 내려준 키워드만 로컬 KeywordManager에 동기화합니다.
-        // 서버 성공 시에는 NPCInteraction이 임의로 로컬 키워드를 생성하지 않습니다.
-        if (response.data.granted_keyword != null)
+        string talkDialogue = GetServerDialogueFromTalkData(response.data);
+
+        if (!string.IsNullOrEmpty(talkDialogue))
         {
-            AddKeywordFromServer(response.data.granted_keyword);
+            dialogueMessage = talkDialogue;
+            Debug.Log($"[NPCInteraction] 서버 talk 응답 대화문 적용: {dialogueMessage}");
+        }
+        else
+        {
+            Debug.Log("[NPCInteraction] 서버 talk 응답에 대화문이 없습니다. 기존 대사를 유지합니다.");
         }
 
-        Debug.Log($"서버 NPC 대화 처리 완료: {npcName}");
+        ServerGrantedKeyword granted = ExtractGrantedKeyword(response.data);
+
+        Debug.Log(
+            $"[NPCInteraction] 서버 talk 응답 확인 / status={response.status}, success={response.data.success}, " +
+            $"keyword_id={response.data.keyword_id}, keyword_name={response.data.keyword_name}, 키워드 존재={(granted != null)}"
+        );
+
+        if (granted != null)
+        {
+            AddKeywordFromServer(granted);
+        }
+        else
+        {
+            Debug.LogWarning(
+                "[NPCInteraction] 서버 talk 응답에 키워드 정보가 없습니다. " +
+                "현재 서버는 드랍 확률에 실패하면 keyword_id=null 또는 0으로 응답할 수 있습니다. " +
+                "반드시 키워드를 주고 싶으면 서버 drop_rate를 1.0으로 하거나 Unity에서 로컬 fallback을 사용하세요."
+            );
+
+            // 테스트 중 매번 키워드를 받고 싶으면 아래 줄을 임시로 켜도 됩니다.
+            // GiveKeywordLocallyIfNeeded();
+        }
+
+        Debug.Log($"[NPCInteraction] 서버 NPC 대화 처리 완료: {npcName}");
+
+        RefreshOpenedDialogue();
     }
+
+    private ServerGrantedKeyword ExtractGrantedKeyword(ServerNpcTalkData data)
+    {
+        if (data == null)
+            return null;
+
+        if (data.granted_keyword != null)
+            return data.granted_keyword;
+
+        if (data.keyword != null)
+            return data.keyword;
+
+        if (data.reward_keyword != null)
+            return data.reward_keyword;
+
+        // 현재 서버 /explore/action 응답 구조:
+        // keyword_id, keyword_name, keyword_rarity
+        if (data.keyword_id > 0 && !string.IsNullOrEmpty(data.keyword_name))
+        {
+            ServerGrantedKeyword keyword = new ServerGrantedKeyword();
+            keyword.id = data.keyword_id;
+            keyword.name = data.keyword_name;
+            keyword.rarity = data.keyword_rarity;
+
+            // /explore/action은 category를 안 내려줄 수 있음.
+            // AddKeywordFromServer에서 KeywordManager 마스터 데이터로 타입을 다시 보정한다.
+            if (!string.IsNullOrEmpty(data.keyword_type))
+                keyword.keyword_type = data.keyword_type;
+            else if (!string.IsNullOrEmpty(data.category))
+                keyword.keyword_type = data.category;
+            else
+                keyword.keyword_type = "";
+
+            return keyword;
+        }
+
+        return null;
+    }
+
 
     private void AddKeywordFromServer(ServerGrantedKeyword granted)
     {
         if (keywordManager == null)
         {
-            Debug.LogWarning("KeywordManager를 찾지 못했습니다.");
+            Debug.LogWarning("[NPCInteraction] KeywordManager를 찾지 못했습니다.");
+            return;
+        }
+
+        if (granted == null)
+        {
+            Debug.LogWarning("[NPCInteraction] 서버 키워드 데이터가 null입니다.");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(granted.name))
+        {
+            Debug.LogWarning("[NPCInteraction] 서버 키워드 name이 비어 있어 키워드 동기화를 건너뜁니다.");
             return;
         }
 
         KeywordType parsedType = keywordType;
 
-        if (!string.IsNullOrEmpty(granted.keyword_type))
+        // 1순위: 서버가 type/category를 내려준 경우
+        string typeText = granted.keyword_type;
+        if (string.IsNullOrEmpty(typeText))
+            typeText = granted.category;
+
+        if (!string.IsNullOrEmpty(typeText))
         {
-            System.Enum.TryParse(granted.keyword_type, true, out parsedType);
+            System.Enum.TryParse(typeText, true, out parsedType);
+        }
+        else
+        {
+            // 2순위: keyword_id로 마스터 키워드에서 타입 보정
+            KeywordData masterById = keywordManager.GetMasterKeyword(granted.id);
+            if (masterById != null)
+            {
+                parsedType = masterById.keywordType;
+            }
+            else
+            {
+                KeywordData masterByName = keywordManager.GetMasterKeywordByName(granted.name);
+                if (masterByName != null)
+                    parsedType = masterByName.keywordType;
+            }
         }
 
-        if (string.IsNullOrEmpty(granted.name))
-        {
-            Debug.LogWarning("서버 granted_keyword.name이 비어 있어 키워드 동기화를 건너뜁니다.");
-            return;
-        }
+        Debug.Log($"[서버 granted] id={granted.id} name='{granted.name}' type={typeText} parsedType={parsedType}");
 
         keywordManager.AddKeyword(granted.id, granted.name, parsedType);
-        Debug.Log($"서버 확정 키워드 동기화: {granted.name}");
+        Debug.Log($"[NPCInteraction] 서버 확정 키워드 동기화: {granted.name}");
     }
 
     private void GiveKeywordLocallyIfNeeded()
     {
-        if (!giveKeyword) return;
+        if (!giveKeyword)
+            return;
 
         if (keywordManager == null)
         {
-            Debug.LogWarning("KeywordManager를 찾지 못했습니다.");
+            Debug.LogWarning("[NPCInteraction] KeywordManager를 찾지 못했습니다.");
             return;
         }
 
@@ -527,11 +780,12 @@ public class NPCInteraction : MonoBehaviour
 
     private void GiveRumorLocallyIfNeeded()
     {
-        if (!giveRumor) return;
+        if (!giveRumor)
+            return;
 
         if (RumorManager.Instance == null)
         {
-            Debug.LogWarning("RumorManager가 씬에 없습니다. 소문은 기록되지 않습니다.");
+            Debug.LogWarning("[NPCInteraction] RumorManager가 씬에 없습니다. 소문은 기록되지 않습니다.");
             return;
         }
 
@@ -554,7 +808,8 @@ public class NPCInteraction : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        if (!other.CompareTag("Player")) return;
+        if (!other.CompareTag("Player"))
+            return;
 
         playerInRange = true;
 
@@ -566,9 +821,11 @@ public class NPCInteraction : MonoBehaviour
 
     private void OnTriggerExit2D(Collider2D other)
     {
-        if (!other.CompareTag("Player")) return;
+        if (!other.CompareTag("Player"))
+            return;
 
         playerInRange = false;
+        isCurrentDialogueNpc = false;
 
         if (uiManager != null)
         {
