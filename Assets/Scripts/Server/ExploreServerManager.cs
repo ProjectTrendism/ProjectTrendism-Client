@@ -374,10 +374,27 @@ public class ExploreServerManager : MonoBehaviour
             Debug.Log("[ExploreServerManager] 서버 빈도수 동기화 완료: " + imported + "개");
     }
 
+    /*
     public IEnumerator SyncAfterNpcTalk()
     {
         if (!syncAfterEveryNpcTalk)
             yield break;
+
+        yield return StartCoroutine(SyncInventoryFromServer());
+        yield return StartCoroutine(SyncFrequencyFromServer());
+    }*/
+    public bool refreshNpcAfterEveryTalk = true;
+
+    public IEnumerator SyncAfterNpcTalk()
+    {
+        if (!syncAfterEveryNpcTalk)
+            yield break;
+
+        // 대화 후 서버에서 talked / perceived_reliability가 바뀌므로 NPC 목록을 다시 받아야 함
+        if (refreshNpcAfterEveryTalk && NPCServerManager.Instance != null)
+        {
+            yield return StartCoroutine(NPCServerManager.Instance.RefreshNpcList());
+        }
 
         yield return StartCoroutine(SyncInventoryFromServer());
         yield return StartCoroutine(SyncFrequencyFromServer());
