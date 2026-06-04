@@ -66,6 +66,35 @@ public class SettlementFullPanelUI : MonoBehaviour
         RefreshUI();
     }
 
+
+    public void ShowServerSettlement(MarketSettlementData data, int soldCount)
+    {
+        if (data == null)
+            return;
+
+        int serverRevenue = Mathf.RoundToInt(data.total_revenue);
+        int serverMaterial = Mathf.RoundToInt(data.material_cost);
+        int serverRent = Mathf.RoundToInt(data.rent_cost);
+        int serverPromotion = Mathf.RoundToInt(data.marketing_cost);
+        int serverManage = Mathf.RoundToInt(data.management_cost);
+
+        Show(
+            serverRevenue,
+            serverRevenue,
+            0,
+            serverPromotion,
+            serverMaterial,
+            serverRent,
+            serverManage,
+            soldCount
+        );
+
+        if (reviewText != null && data.penalty)
+        {
+            reviewText.text += "\n\n[서버 정산] 순이익이 기준치보다 낮아 페널티 위험이 있습니다.";
+        }
+    }
+
     public void Hide()
     {
         if (panelRoot != null)

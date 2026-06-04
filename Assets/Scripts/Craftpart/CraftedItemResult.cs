@@ -30,6 +30,7 @@ public class CraftedItemResult
     public string conceptKeywordName;
 
     public List<string> usedKeywordNames = new List<string>();
+    public List<int> usedKeywordIds = new List<int>();
 
     // 피드백 반영용 제작 세부 평가
     public int trendFitScore;

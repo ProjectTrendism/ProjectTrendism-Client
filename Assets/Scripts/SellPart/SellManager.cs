@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -76,6 +77,14 @@ public class SellManager : MonoBehaviour
 
      public TextMeshProUGUI marketStatusText;
 
+    [Header("서버 판매 연동")]
+    public bool useMarketServer = true;
+    public bool fallbackToLocalWhenServerFails = true;
+    public int settlementSeasonId = 1;
+    public int currentMarketDay = 0;
+    public bool refreshServerDataWhenSelectItem = true;
+    public bool registerItemsOnEnterSellScene = true;
+
     [HideInInspector] public SettlementPanelUI settlementPanelUI;
     
 
@@ -108,6 +117,9 @@ public class SellManager : MonoBehaviour
             selectedItem = sellableItems[0];
 
         RefreshUI();
+
+        if (useMarketServer && registerItemsOnEnterSellScene)
+            StartCoroutine(RegisterAllSellableItemsOnServer());
     }
 
     void SyncNewCraftedItems()
@@ -131,6 +143,11 @@ public class SellManager : MonoBehaviour
             if (existingItem != null)
             {
                 existingItem.stock += 1;
+
+                // 서버에는 재고 수정 API가 없으므로, 같은 아이템 재고가 늘어나면 새 재고로 다시 등록한다.
+                existingItem.serverMarketItemId = 0;
+                existingItem.serverRegistered = false;
+                existingItem.serverStatusMessage = "재고 변경으로 서버 재등록 필요";
             }
             else
             {
@@ -439,6 +456,9 @@ public class SellManager : MonoBehaviour
         selectedItem = item;
         RefreshUI();
         RefreshPromotionPanelUI();
+
+        if (useMarketServer && refreshServerDataWhenSelectItem)
+            StartCoroutine(RefreshSelectedItemServerData());
     }
 
     public void RefreshUI()
@@ -538,11 +558,20 @@ public class SellManager : MonoBehaviour
 
         if (marketStatusText != null)
         {
+            string serverText = selectedItem.serverRegistered
+                ? "\n\n[서버]\n마켓 ID : " + selectedItem.serverMarketItemId +
+                  "\n서버 트렌드 : " + selectedItem.serverTrendIndex.ToString("F1") +
+                  "\n예상 매출 : " + selectedItem.serverExpectedRevenue.ToString("F1") + " G" +
+                  "\n피크 일자 : " + (selectedItem.serverPeakBuyersDay >= 0 ? selectedItem.serverPeakBuyersDay.ToString() : "-") +
+                  "\n분석 : " + selectedItem.serverAnalysisMessage
+                : "\n\n[서버]\n" + selectedItem.serverStatusMessage;
+
             marketStatusText.text =
                 "가격 적정성 : " + selectedItem.priceEvaluation + "\n" +
                 "예상 판매 확률 : " + Mathf.RoundToInt(selectedItem.expectedSellChance) + "%\n" +
                 "추천 행동 : " + selectedItem.recommendationMessage + "\n" +
-                "위험 원인 : " + selectedItem.riskMessage;
+                "위험 원인 : " + selectedItem.riskMessage +
+                serverText;
         }
 
         if (trendValueText != null)
@@ -550,9 +579,6 @@ public class SellManager : MonoBehaviour
 
         if (currentPriceText != null)
             currentPriceText.text = "현재 판매가 : " + currentPrice + " G";
-
-        if (marketStatusText != null)
-            marketStatusText.text = "시장 반응 정보가 여기에 표시됩니다.";
 
         if (trendSlider != null)
             trendSlider.value = selectedItem.trendValue / 100f;
@@ -610,17 +636,120 @@ public class SellManager : MonoBehaviour
     }
     public void OnClickSellNormal()
     {
+        StartCoroutine(SellThroughServerOrLocal(0f, false));
+    }
+
+    public void OnClickSellDiscount()
+    {
+        StartCoroutine(SellThroughServerOrLocal(0.3f, true));
+    }
+
+    private IEnumerator SellThroughServerOrLocal(float discountRate, bool isDiscount)
+    {
         if (selectedItem == null)
         {
             AddLog("선택된 아이템이 없습니다.");
-            return;
+            yield break;
         }
 
         if (selectedItem.stock <= 0)
         {
             AddLog("재고가 없습니다.");
-            return;
+            yield break;
         }
+
+        if (useMarketServer && MarketServerManager.Instance != null && ApiManager.Instance != null && ApiManager.Instance.isServerConnected)
+        {
+            if (!selectedItem.serverRegistered || selectedItem.serverMarketItemId <= 0)
+            {
+                yield return StartCoroutine(RegisterSellableItemOnServer(selectedItem));
+            }
+
+            if (selectedItem.serverRegistered && selectedItem.serverMarketItemId > 0)
+            {
+                bool done = false;
+                bool success = false;
+                MarketSellData sellData = null;
+                string fail = "";
+
+                yield return StartCoroutine(MarketServerManager.Instance.SellItem(
+                    selectedItem.serverMarketItemId,
+                    1,
+                    discountRate,
+                    data =>
+                    {
+                        success = true;
+                        sellData = data;
+                        done = true;
+                    },
+                    error =>
+                    {
+                        success = false;
+                        fail = error;
+                        done = true;
+                    }
+                ));
+
+                while (!done)
+                    yield return null;
+
+                if (success && sellData != null)
+                {
+                    ApplyServerSellResult(selectedItem, sellData, isDiscount);
+                    yield break;
+                }
+
+                AddLog("[서버 판매 실패] " + fail);
+            }
+        }
+
+        if (!fallbackToLocalWhenServerFails)
+        {
+            AddLog("서버 판매에 실패했습니다. 로컬 fallback이 꺼져 있습니다.");
+            yield break;
+        }
+
+        if (isDiscount)
+            PerformLocalDiscountSell();
+        else
+            PerformLocalNormalSell();
+    }
+
+    private void ApplyServerSellResult(SellableItemData item, MarketSellData data, bool isDiscount)
+    {
+        if (item == null || item.craftedItem == null || data == null)
+            return;
+
+        int revenue = Mathf.RoundToInt(data.revenue);
+
+        item.stock = data.remaining_stock;
+        item.serverTrendIndex = data.trend_index;
+        item.trendValue = Mathf.Clamp(data.trend_index, 0f, 100f);
+
+        currentGold += revenue;
+        totalSales += revenue;
+        if (isDiscount)
+            totalDiscountSales += revenue;
+        totalSoldCount += 1;
+
+        AddLog("[서버 판매 성공] " + item.craftedItem.itemName +
+               " / +" + revenue + " G / 서버 트렌드 " + data.trend_index.ToString("F1") +
+               " / 남은 재고 " + data.remaining_stock);
+
+        if (salesFeedbackUI != null)
+            salesFeedbackUI.ShowSuccess(item, revenue);
+
+        RemoveItemIfEmpty(item);
+        RefreshUI();
+
+        if (selectedItem != null && selectedItem.serverRegistered)
+            StartCoroutine(RefreshSelectedItemServerData());
+    }
+
+    private void PerformLocalNormalSell()
+    {
+        if (selectedItem == null || selectedItem.stock <= 0)
+            return;
 
         UpdateSalesPrediction(selectedItem);
 
@@ -628,7 +757,7 @@ public class SellManager : MonoBehaviour
 
         if (roll > selectedItem.expectedSellChance)
         {
-            AddLog("[정가 판매 실패] " + selectedItem.craftedItem.itemName +
+            AddLog("[정가 판매 실패/로컬] " + selectedItem.craftedItem.itemName +
                 " / 예상 확률 " + Mathf.RoundToInt(selectedItem.expectedSellChance) + "% / " +
                 selectedItem.riskMessage);
 
@@ -646,7 +775,7 @@ public class SellManager : MonoBehaviour
         totalSales += sellPrice;
         totalSoldCount += 1;
 
-        AddLog("[정가 판매 성공] " + selectedItem.craftedItem.itemName +
+        AddLog("[정가 판매 성공/로컬] " + selectedItem.craftedItem.itemName +
             " / +" + sellPrice + " G / 고객 몰림도 " +
             Mathf.RoundToInt(selectedItem.crowdLevel) + "%");
 
@@ -657,19 +786,10 @@ public class SellManager : MonoBehaviour
         RefreshUI();
     }
 
-    public void OnClickSellDiscount()
+    private void PerformLocalDiscountSell()
     {
-        if (selectedItem == null)
-        {
-            AddLog("선택된 아이템이 없습니다.");
+        if (selectedItem == null || selectedItem.stock <= 0)
             return;
-        }
-
-        if (selectedItem.stock <= 0)
-        {
-            AddLog("재고가 없습니다.");
-            return;
-        }
 
         UpdateSalesPrediction(selectedItem);
 
@@ -678,7 +798,7 @@ public class SellManager : MonoBehaviour
 
         if (roll > discountChance)
         {
-            AddLog("[할인 판매 실패] " + selectedItem.craftedItem.itemName +
+            AddLog("[할인 판매 실패/로컬] " + selectedItem.craftedItem.itemName +
                 " / 예상 확률 " + Mathf.RoundToInt(discountChance) + "% / " +
                 selectedItem.riskMessage);
 
@@ -697,7 +817,7 @@ public class SellManager : MonoBehaviour
         totalDiscountSales += sellPrice;
         totalSoldCount += 1;
 
-        AddLog("[할인 판매 성공] " + selectedItem.craftedItem.itemName +
+        AddLog("[할인 판매 성공/로컬] " + selectedItem.craftedItem.itemName +
             " / +" + sellPrice + " G / 할인으로 구매 장벽 감소");
 
         if (salesFeedbackUI != null)
@@ -706,6 +826,7 @@ public class SellManager : MonoBehaviour
         RemoveItemIfEmpty(selectedItem);
         RefreshUI();
     }
+
     public void OnClickPriceUp()
     {
         if (selectedItem == null)
@@ -721,6 +842,9 @@ public class SellManager : MonoBehaviour
         UpdateSalesPrediction(selectedItem);
 
         AddLog("[가격 조정] 판매가를 " + selectedItem.manualPrice + "G로 올렸습니다.");
+
+        if (useMarketServer)
+            StartCoroutine(SendSelectedPriceToServer());
 
         RefreshUI();
     }
@@ -741,6 +865,9 @@ public class SellManager : MonoBehaviour
 
         AddLog("[가격 조정] 판매가를 " + selectedItem.manualPrice + "G로 내렸습니다.");
 
+        if (useMarketServer)
+            StartCoroutine(SendSelectedPriceToServer());
+
         RefreshUI();
     }
 
@@ -758,6 +885,9 @@ public class SellManager : MonoBehaviour
         UpdateSalesPrediction(selectedItem);
 
         AddLog("[가격 조정] 유행 지수 기반 자동 가격으로 되돌렸습니다.");
+
+        if (useMarketServer)
+            StartCoroutine(SendSelectedPriceToServer());
 
         RefreshUI();
     }
@@ -1075,10 +1205,46 @@ public class SellManager : MonoBehaviour
 
     public void OpenSettlementFullPanel()
     {
+        StartCoroutine(OpenSettlementFullPanelRoutine());
+    }
+
+    private IEnumerator OpenSettlementFullPanelRoutine()
+    {
         if (settlementFullPanelUI == null)
         {
             AddLog("큰 정산 패널이 연결되지 않았습니다.");
-            return;
+            yield break;
+        }
+
+        if (useMarketServer && MarketServerManager.Instance != null && ApiManager.Instance != null && ApiManager.Instance.isServerConnected)
+        {
+            bool success = false;
+            MarketSettlementData settlementData = null;
+            string fail = "";
+
+            yield return StartCoroutine(MarketServerManager.Instance.GetSettlement(
+                settlementSeasonId,
+                data =>
+                {
+                    success = true;
+                    settlementData = data;
+                },
+                error =>
+                {
+                    success = false;
+                    fail = error;
+                }
+            ));
+
+            if (success && settlementData != null)
+            {
+                settlementFullPanelUI.ShowServerSettlement(settlementData, totalSoldCount);
+                AddLog("[서버 정산] 총매출 " + settlementData.total_revenue.ToString("F1") +
+                       " / 순이익 " + settlementData.net_profit.ToString("F1"));
+                yield break;
+            }
+
+            AddLog("[서버 정산 실패] " + fail + " / 로컬 정산으로 표시합니다.");
         }
 
         int normalSales = totalSales - totalDiscountSales;
@@ -1095,6 +1261,240 @@ public class SellManager : MonoBehaviour
             manageCost,
             totalSoldCount
         );
+    }
+
+
+    private IEnumerator RegisterAllSellableItemsOnServer()
+    {
+        if (!useMarketServer || MarketServerManager.Instance == null)
+            yield break;
+
+        for (int i = 0; i < sellableItems.Count; i++)
+        {
+            SellableItemData item = sellableItems[i];
+            if (item == null || item.craftedItem == null)
+                continue;
+
+            if (item.serverRegistered && item.serverMarketItemId > 0)
+                continue;
+
+            yield return StartCoroutine(RegisterSellableItemOnServer(item));
+        }
+
+        if (selectedItem != null && selectedItem.serverRegistered)
+            yield return StartCoroutine(RefreshSelectedItemServerData());
+
+        RefreshUI();
+    }
+
+    private IEnumerator RegisterSellableItemOnServer(SellableItemData item)
+    {
+        if (item == null || item.craftedItem == null)
+            yield break;
+
+        if (MarketServerManager.Instance == null || ApiManager.Instance == null || !ApiManager.Instance.isServerConnected)
+        {
+            item.serverStatusMessage = "서버 연결 없음";
+            yield break;
+        }
+
+        if (item.serverRegistering)
+            yield break;
+
+        item.serverRegistering = true;
+        item.serverStatusMessage = "서버 등록 중";
+
+        MarketRegisterReqBody body = BuildRegisterBody(item);
+
+        bool success = false;
+        MarketItemDto dto = null;
+        string fail = "";
+
+        yield return StartCoroutine(MarketServerManager.Instance.RegisterItem(
+            body,
+            data =>
+            {
+                success = true;
+                dto = data;
+            },
+            error =>
+            {
+                success = false;
+                fail = error;
+            }
+        ));
+
+        item.serverRegistering = false;
+
+        if (success && dto != null && dto.id > 0)
+        {
+            item.serverMarketItemId = dto.id;
+            item.serverRegistered = true;
+            item.serverStatusMessage = "서버 등록 완료";
+            item.stock = Mathf.Max(0, dto.stock);
+            item.craftedItem.itemName = string.IsNullOrEmpty(dto.item_name) ? item.craftedItem.itemName : dto.item_name;
+            item.craftedItem.finalPrice = Mathf.RoundToInt(dto.base_value);
+
+            AddLog("[서버 등록] " + item.craftedItem.itemName + " / market_id=" + dto.id);
+        }
+        else
+        {
+            item.serverRegistered = false;
+            item.serverStatusMessage = "서버 등록 실패";
+            AddLog("[서버 등록 실패] " + item.craftedItem.itemName + " / " + fail);
+        }
+    }
+
+    private MarketRegisterReqBody BuildRegisterBody(SellableItemData item)
+    {
+        CraftedItemResult crafted = item.craftedItem;
+
+        int[] keywordIds = GetKeywordIdsForMarket(crafted);
+
+        return new MarketRegisterReqBody
+        {
+            item_name = string.IsNullOrEmpty(crafted.itemName) ? "이름 없는 제작품" : crafted.itemName,
+            keyword_ids = keywordIds,
+            grade = string.IsNullOrEmpty(crafted.grade) ? "C" : crafted.grade,
+            base_value = Mathf.Max(1, crafted.finalPrice),
+            stock = Mathf.Max(1, item.stock),
+            release_day = currentMarketDay
+        };
+    }
+
+    private int[] GetKeywordIdsForMarket(CraftedItemResult crafted)
+    {
+        if (crafted != null && crafted.usedKeywordIds != null && crafted.usedKeywordIds.Count > 0)
+            return crafted.usedKeywordIds.ToArray();
+
+        // 서버 제작 결과 item_id만 있고 keyword_ids가 없는 경우를 위한 임시 fallback.
+        // 서버 market 스키마는 keyword_ids를 요구하므로 빈 배열 대신 craft item id를 넣지 않는다.
+        return new int[0];
+    }
+
+    private IEnumerator RefreshSelectedItemServerData()
+    {
+        if (selectedItem == null || !selectedItem.serverRegistered || selectedItem.serverMarketItemId <= 0)
+            yield break;
+
+        yield return StartCoroutine(RefreshServerDataForItem(selectedItem));
+        RefreshUI();
+    }
+
+    private IEnumerator RefreshServerDataForItem(SellableItemData item)
+    {
+        if (item == null || !item.serverRegistered || item.serverMarketItemId <= 0 || MarketServerManager.Instance == null)
+            yield break;
+
+        yield return StartCoroutine(MarketServerManager.Instance.GetTrend(
+            item.serverMarketItemId,
+            data =>
+            {
+                item.serverTrendIndex = data.current_index;
+                item.trendValue = Mathf.Clamp(data.current_index, 0f, 100f);
+                item.serverStatusMessage = "트렌드 갱신 완료";
+            },
+            error =>
+            {
+                item.serverStatusMessage = "트렌드 갱신 실패";
+            }
+        ));
+
+        yield return StartCoroutine(MarketServerManager.Instance.SimulateBuyers(
+            item.serverMarketItemId,
+            data =>
+            {
+                if (data.summary != null)
+                {
+                    item.serverExpectedRevenue = data.summary.total_revenue;
+                    item.serverPeakBuyersDay = data.summary.peak_buyers_day;
+                    item.serverPeakBuyersCount = data.summary.peak_buyers_count;
+                    item.serverTotalSoldPrediction = data.summary.total_sold;
+                }
+            },
+            error =>
+            {
+                // 시뮬레이션 실패는 치명적이지 않음
+            }
+        ));
+
+        yield return StartCoroutine(MarketServerManager.Instance.AnalyzeItem(
+            item.serverMarketItemId,
+            data =>
+            {
+                item.serverAnalysisMessage = BuildServerAnalysisText(data);
+            },
+            error =>
+            {
+                item.serverAnalysisMessage = "분석 실패";
+            }
+        ));
+
+        UpdateSalesPrediction(item);
+    }
+
+    private string BuildServerAnalysisText(MarketAnalyzeData data)
+    {
+        if (data == null)
+            return "-";
+
+        string text = "";
+
+        if (data.server_analysis != null)
+        {
+            text += "점수 " + data.server_analysis.overall_score + " / " + data.server_analysis.trend_status;
+
+            if (data.server_analysis.suggestions != null && data.server_analysis.suggestions.Length > 0)
+                text += " / " + data.server_analysis.suggestions[0];
+
+            if (data.server_analysis.issues != null && data.server_analysis.issues.Length > 0)
+                text += " / 이슈: " + data.server_analysis.issues[0].message;
+        }
+
+        if (data.ai_analysis != null && !string.IsNullOrEmpty(data.ai_analysis.summary))
+        {
+            if (!string.IsNullOrEmpty(text))
+                text += "\n";
+            text += "AI: " + data.ai_analysis.summary;
+        }
+
+        if (string.IsNullOrEmpty(text))
+            text = "서버 분석 데이터 없음";
+
+        return text;
+    }
+
+    private IEnumerator SendSelectedPriceToServer()
+    {
+        if (selectedItem == null || !selectedItem.serverRegistered || selectedItem.serverMarketItemId <= 0)
+            yield break;
+
+        if (MarketServerManager.Instance == null || ApiManager.Instance == null || !ApiManager.Instance.isServerConnected)
+            yield break;
+
+        int price = CalculateCurrentPrice(selectedItem);
+
+        yield return StartCoroutine(MarketServerManager.Instance.AdjustPrice(
+            selectedItem.serverMarketItemId,
+            price,
+            data =>
+            {
+                selectedItem.serverStatusMessage = data.message;
+                if (data.new_price > 0)
+                {
+                    selectedItem.manualPrice = Mathf.RoundToInt(data.new_price);
+                    selectedItem.useManualPrice = true;
+                }
+
+                AddLog("[서버 가격 조정] " + data.message);
+            },
+            error =>
+            {
+                AddLog("[서버 가격 조정 실패] " + error);
+            }
+        ));
+
+        yield return StartCoroutine(RefreshSelectedItemServerData());
     }
 
     public void ResetAfterSettlement()

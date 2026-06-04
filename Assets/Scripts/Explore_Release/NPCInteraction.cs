@@ -242,6 +242,8 @@ public class NPCInteraction : MonoBehaviour
     private bool hasLocalRewardGiven = false;
     private bool isCurrentDialogueNpc = false;
 
+    public bool HasTalkedThisCycle { get; private set; }
+
     private DialogueManager dialogueManager;
     private UIManager uiManager;
     private KeywordManager keywordManager;
@@ -583,6 +585,13 @@ public class NPCInteraction : MonoBehaviour
             }
         }
 
+        HasTalkedThisCycle = true;
+
+        if (ExploreUIRefresher.Instance != null)
+        {
+            ExploreUIRefresher.Instance.RefreshAll();
+        }
+
         isTalkingToServer = false;
     }
 
@@ -795,6 +804,10 @@ public class NPCInteraction : MonoBehaviour
         Debug.Log($"[서버 keyword] id={granted.id} name='{granted.name}' type={parsedType} rarity={granted.rarity}");
 
         keywordManager.AddKeyword(granted.id, granted.name, parsedType);
+        if (ExploreUIRefresher.Instance != null)
+        {
+            ExploreUIRefresher.Instance.RegisterKeyword(granted.name);
+        }
         if (verboseLog) Debug.Log($"[NPCInteraction] 서버 확정 키워드 동기화: {granted.name}");
     }
 
@@ -818,6 +831,11 @@ public class NPCInteraction : MonoBehaviour
         else
         {
             keywordManager.AddKeyword(0, keywordToGive, keywordType);
+        }
+
+        if (ExploreUIRefresher.Instance != null)
+        {
+            ExploreUIRefresher.Instance.RegisterKeyword(keywordToGive);
         }
 
         Debug.Log($"로컬 키워드 획득: {keywordToGive}");

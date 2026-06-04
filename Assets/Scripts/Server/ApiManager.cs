@@ -47,18 +47,21 @@ public class ApiManager : MonoBehaviour
     {
         get
         {
-            string selected = "";
-
-            if (serverTarget == TrendismServerTarget.Localhost)
-                selected = localBaseUrl;
-            else if (serverTarget == TrendismServerTarget.Custom)
-                selected = string.IsNullOrWhiteSpace(customBaseUrl) ? baseUrl : customBaseUrl;
-            else
-                selected = cloudflareBaseUrl;
-
+            string selected;
+            switch (serverTarget)
+            {
+                case TrendismServerTarget.Localhost:
+                    selected = localBaseUrl;
+                    break;
+                case TrendismServerTarget.Custom:
+                    selected = !string.IsNullOrWhiteSpace(customBaseUrl) ? customBaseUrl : baseUrl;
+                    break;
+                default: // Cloudflare 등: 인스펙터에 직접 넣은 baseUrl을 최우선
+                    selected = !string.IsNullOrWhiteSpace(baseUrl) ? baseUrl : cloudflareBaseUrl;
+                    break;
+            }
             if (string.IsNullOrWhiteSpace(selected))
                 selected = baseUrl;
-
             return NormalizeBaseUrl(selected);
         }
     }

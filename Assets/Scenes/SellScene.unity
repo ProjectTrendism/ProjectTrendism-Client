@@ -7238,7 +7238,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 1, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 20, y: 5}
+  m_AnchoredPosition: {x: 19.999817, y: 5}
   m_SizeDelta: {x: 310, y: -150}
   m_Pivot: {x: 1, y: 0.5}
 --- !u!114 &432989432
@@ -12876,6 +12876,7 @@ GameObject:
   - component: {fileID: 811361401}
   - component: {fileID: 811361400}
   - component: {fileID: 811361399}
+  - component: {fileID: 811361402}
   m_Layer: 0
   m_Name: server
   m_TagString: Untagged
@@ -12907,8 +12908,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fcef260336f5db74ea175a81d79d45a9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  serverTarget: 0
+  cloudflareBaseUrl: https://logic-yarn-advances-colorado.trycloudflare.com
+  localBaseUrl: http://127.0.0.1:8000
+  customBaseUrl: 
+  baseUrl: https://unfocusedly-pleurocarpous-gina.ngrok-free.dev
   isServerConnected: 0
-  baseUrl: https://unfocusedly-pleurocarpous-gina.ngrok-free.dev/
+  lastResponseCode: 0
+  lastError: 
+  lastResponseBody: 
+  defaultTimeoutSeconds: 10
+  addNgrokSkipHeader: 1
+  verboseLog: 0
 --- !u!4 &811361401
 Transform:
   m_ObjectHideFlags: 0
@@ -12924,6 +12935,23 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &811361402
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 811361398}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e285fe7c4b729be44b0fd0a1efb08fbd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MarketServerManager
+  useApiManagerBaseUrl: 1
+  verboseLog: 1
+  trendDays: 60
+  simulateDays: 60
+  simulateBaseBuyers: 10
 --- !u!1 &827500750
 GameObject:
   m_ObjectHideFlags: 0
@@ -14306,7 +14334,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: -0.00091552734}
+  m_AnchoredPosition: {x: 0, y: -0.000061035156}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &923141752
@@ -22334,7 +22362,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 1236996930}
   m_Direction: 2
   m_Value: 1
-  m_Size: 1
+  m_Size: 0.9999691
   m_NumberOfSteps: 0
   m_OnValueChanged:
     m_PersistentCalls:
@@ -23811,7 +23839,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0.25}
   m_AnchorMax: {x: 1, y: 0.75}
-  m_AnchoredPosition: {x: -4.999695, y: 0}
+  m_AnchoredPosition: {x: -4.999634, y: 0}
   m_SizeDelta: {x: -20, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &1655985097
@@ -29381,6 +29409,18 @@ MonoBehaviour:
       styleKeywordName: 
       conceptKeywordName: 
       usedKeywordNames: []
+      usedKeywordIds: 
+      trendFitScore: 0
+      combinationScore: 0
+      informationScore: 0
+      targetClarityScore: 0
+      originalityScore: 0
+      detailScoreMessage: 
+      problemMessage: 
+      nextExploreMessage: 
+      itemDescription: 
+      imageUrl: 
+      serverItemId: 0
     stock: 0
     trendValue: 0
     lifeTurns: 0
@@ -29393,6 +29433,16 @@ MonoBehaviour:
     priceEvaluation: 
     recommendationMessage: 
     riskMessage: 
+    serverMarketItemId: 0
+    serverRegistered: 0
+    serverRegistering: 0
+    serverStatusMessage: 
+    serverTrendIndex: 0
+    serverExpectedRevenue: 0
+    serverPeakBuyersDay: 0
+    serverPeakBuyersCount: 0
+    serverTotalSoldPrediction: 0
+    serverAnalysisMessage: 
   goldText: {fileID: 300418825}
   sellItemListUI: {fileID: 111095127}
   selectedItemTitleText: {fileID: 1643431428}
@@ -29425,6 +29475,12 @@ MonoBehaviour:
   processedCraftedItemCount: 0
   promotionPanelUI: {fileID: 0}
   marketStatusText: {fileID: 0}
+  useMarketServer: 1
+  fallbackToLocalWhenServerFails: 1
+  settlementSeasonId: 1
+  currentMarketDay: 0
+  refreshServerDataWhenSelectItem: 1
+  registerItemsOnEnterSellScene: 1
   settlementPanelUI: {fileID: 0}
 --- !u!4 &2083145050
 Transform:

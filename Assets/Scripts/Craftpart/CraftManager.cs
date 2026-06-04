@@ -436,6 +436,12 @@ public class CraftManager : MonoBehaviour
         for (int i = 0; i < selectedKeywords.Count; i++)
         {
             result.usedKeywordNames.Add(selectedKeywords[i].keywordName);
+
+            if (selectedKeywords[i] != null && selectedKeywords[i].serverId > 0)
+            {
+                if (!result.usedKeywordIds.Contains(selectedKeywords[i].serverId))
+                    result.usedKeywordIds.Add(selectedKeywords[i].serverId);
+            }
         }
 
         return result;

@@ -26,6 +26,19 @@ public class SellableItemData
     public string recommendationMessage = "-";
     public string riskMessage = "-";
 
+    [Header("서버 판매 연동")]
+    public int serverMarketItemId = 0;
+    public bool serverRegistered = false;
+    public bool serverRegistering = false;
+    public string serverStatusMessage = "-";
+    public float serverTrendIndex = 0f;
+    public float serverExpectedRevenue = 0f;
+    public int serverPeakBuyersDay = -1;
+    public int serverPeakBuyersCount = 0;
+    public int serverTotalSoldPrediction = 0;
+    public string serverAnalysisMessage = "-";
+
+
     public SellableItemData(CraftedItemResult item)
     {
         craftedItem = item;
@@ -45,5 +58,16 @@ public class SellableItemData
         priceEvaluation = "-";
         recommendationMessage = "-";
         riskMessage = "-";
+
+        serverMarketItemId = 0;
+        serverRegistered = false;
+        serverRegistering = false;
+        serverStatusMessage = "-";
+        serverTrendIndex = 0f;
+        serverExpectedRevenue = 0f;
+        serverPeakBuyersDay = -1;
+        serverPeakBuyersCount = 0;
+        serverTotalSoldPrediction = 0;
+        serverAnalysisMessage = "-";
     }
 }
