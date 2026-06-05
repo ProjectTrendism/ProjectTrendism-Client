@@ -3445,6 +3445,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 728256510}
     m_Modifications:
+    - target: {fileID: 6550761234824477148, guid: 3f455c34b1c30534891c2bc1c23411e6, type: 3}
+      propertyPath: m_SortingOrder
+      value: 3
+      objectReference: {fileID: 0}
     - target: {fileID: 6550761235523395908, guid: 3f455c34b1c30534891c2bc1c23411e6, type: 3}
       propertyPath: m_LocalScale.x
       value: 0.2
@@ -3618,6 +3622,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   moveSpeed: 4
+  visualRoot: {fileID: 0}
+  animator: {fileID: 0}
 --- !u!61 &67136071
 BoxCollider2D:
   m_ObjectHideFlags: 0
@@ -40518,7 +40524,7 @@ TilemapRenderer:
   m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
-  m_SortingOrder: 1
+  m_SortingOrder: 7
   m_MaskInteraction: 0
   m_ChunkSize: {x: 32, y: 32, z: 32}
   m_ChunkCullingBounds: {x: 0, y: 0, z: 0}
@@ -62287,6 +62293,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   moveSpeed: 5
+  visualRoot: {fileID: 0}
+  animator: {fileID: 0}
 --- !u!50 &1853552455
 Rigidbody2D:
   serializedVersion: 5
