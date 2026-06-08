@@ -14,7 +14,6 @@ public class PlayerMovement : MonoBehaviour
 
     private Rigidbody2D rb;
     private Vector2 moveInput;
-    private Vector2 lastMoveDirection = Vector2.down;
 
     private void Awake()
     {
@@ -51,11 +50,6 @@ public class PlayerMovement : MonoBehaviour
         float y = Input.GetAxisRaw("Vertical");
 
         moveInput = new Vector2(x, y).normalized;
-
-        if (moveInput != Vector2.zero)
-        {
-            lastMoveDirection = moveInput;
-        }
     }
 
     private void UpdateFacingDirection()
@@ -85,11 +79,5 @@ public class PlayerMovement : MonoBehaviour
         bool isMoving = moveInput.sqrMagnitude > 0.01f;
 
         animator.SetBool("IsMoving", isMoving);
-
-        animator.SetFloat("MoveX", moveInput.x);
-        animator.SetFloat("MoveY", moveInput.y);
-
-        animator.SetFloat("LastMoveX", lastMoveDirection.x);
-        animator.SetFloat("LastMoveY", lastMoveDirection.y);
     }
 }

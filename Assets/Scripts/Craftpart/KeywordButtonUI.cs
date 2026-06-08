@@ -14,14 +14,32 @@ public class KeywordButtonUI : MonoBehaviour
     {
         keywordData = data;
 
-        keywordNameText.text = data.keywordName;
-        typeText.text = data.keywordType.ToString();
+        if (keywordNameText != null)
+        {
+            keywordNameText.text = data.keywordName;
+            keywordNameText.fontSize = 16f;
+            keywordNameText.fontStyle = FontStyles.Bold;
+            keywordNameText.alignment = TextAlignmentOptions.Center;
+            keywordNameText.enableWordWrapping = false;
+            keywordNameText.overflowMode = TextOverflowModes.Ellipsis;
+        }
 
-        button.onClick.RemoveAllListeners();
-        button.onClick.AddListener(OnClickButton);
+        if (typeText != null)
+        {
+            typeText.gameObject.SetActive(false);
+        }
+
+        if (button == null)
+            button = GetComponent<Button>();
+
+        if (button != null)
+        {
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(OnClickButton);
+        }
     }
 
-    void OnClickButton()
+    private void OnClickButton()
     {
         if (CraftManager.Instance != null)
         {

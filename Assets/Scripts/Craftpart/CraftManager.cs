@@ -24,6 +24,9 @@ public class CraftManager : MonoBehaviour
     [Header("결과 팝업")]
     public ResultPopupUI resultPopupUI;
 
+    [Header("제작 연출")]
+    public CraftRevealSequenceUI craftRevealSequenceUI;
+
     [Header("AI 트렌드 분석 팝업")]
     public AITrendPopupUI aiTrendPopupUI;
 
@@ -609,13 +612,30 @@ public class CraftManager : MonoBehaviour
             RecipeBookManager.Instance.SaveRecipe(selectedKeywords, lastCraftResult);
         }
 
-        if (resultPopupUI != null)
+        if (craftRevealSequenceUI != null)
         {
-            resultPopupUI.Show(lastCraftResult);
+            craftRevealSequenceUI.Play(lastCraftResult, () =>
+            {
+                if (resultPopupUI != null)
+                {
+                    resultPopupUI.Show(lastCraftResult);
+                }
+                else
+                {
+                    Debug.LogWarning("ResultPopupUI가 CraftManager에 연결되지 않았습니다.");
+                }
+            });
         }
         else
         {
-            Debug.LogWarning("ResultPopupUI가 CraftManager에 연결되지 않았습니다.");
+            if (resultPopupUI != null)
+            {
+                resultPopupUI.Show(lastCraftResult);
+            }
+            else
+            {
+                Debug.LogWarning("ResultPopupUI가 CraftManager에 연결되지 않았습니다.");
+            }
         }
 
         if (craftedItemListUI != null)
