@@ -612,30 +612,26 @@ public class CraftManager : MonoBehaviour
             RecipeBookManager.Instance.SaveRecipe(selectedKeywords, lastCraftResult);
         }
 
+        // 연출 먼저
         if (craftRevealSequenceUI != null)
         {
-            craftRevealSequenceUI.Play(lastCraftResult, () =>
-            {
-                if (resultPopupUI != null)
-                {
-                    resultPopupUI.Show(lastCraftResult);
-                }
-                else
-                {
-                    Debug.LogWarning("ResultPopupUI가 CraftManager에 연결되지 않았습니다.");
-                }
-            });
+            craftRevealSequenceUI.Play(lastCraftResult, OnCraftSequenceFinished);
         }
         else
         {
-            if (resultPopupUI != null)
-            {
-                resultPopupUI.Show(lastCraftResult);
-            }
-            else
-            {
-                Debug.LogWarning("ResultPopupUI가 CraftManager에 연결되지 않았습니다.");
-            }
+            OnCraftSequenceFinished();
+        }
+    }
+
+    private void OnCraftSequenceFinished()
+    {
+        if (resultPopupUI != null)
+        {
+            resultPopupUI.Show(lastCraftResult);
+        }
+        else
+        {
+            Debug.LogWarning("ResultPopupUI가 CraftManager에 연결되지 않았습니다.");
         }
 
         if (craftedItemListUI != null)
@@ -644,8 +640,8 @@ public class CraftManager : MonoBehaviour
         }
 
         Debug.Log("제작 완료: " + lastCraftResult.itemName +
-                  " / 등급: " + lastCraftResult.grade +
-                  " / imageUrl: " + lastCraftResult.imageUrl);
+                " / 등급: " + lastCraftResult.grade +
+                " / imageUrl: " + lastCraftResult.imageUrl);
 
         ClearSelectedKeywords();
     }

@@ -126,11 +126,9 @@ public class CraftRevealSequenceUI : MonoBehaviour
         ResetVisuals();
         ApplyTexts(result);
 
-        yield return StartCoroutine(LoadResultImage(result));
-
         yield return StartCoroutine(FadeCanvasGroup(rootCanvasGroup, 0f, 1f, 0.15f));
 
-       if (revealHintText != null)
+        if (revealHintText != null)
             revealHintText.text = "키워드를 조합하는 중...";
 
         yield return StartCoroutine(ShowKeyword(keyword1Rect, keyword1Group));
@@ -148,15 +146,24 @@ public class CraftRevealSequenceUI : MonoBehaviour
         SpawnFX(chargeFxPrefab);
 
         yield return StartCoroutine(MoveKeywordsToCenter());
-
         yield return StartCoroutine(PulseGlow());
 
+        PlayBurstEffects();
         SpawnFX(burstFxPrefab);
 
         yield return StartCoroutine(FlashScreen());
 
+        // 여기서부터 결과 생성 시작
         if (revealHintText != null)
-            revealHintText.text = "결과 이미지를 생성하는 중...";
+            revealHintText.text = "제작품을 생성하는 중...";
+
+        yield return new WaitForSeconds(0.12f);
+
+        // 결과 이미지는 이 시점에 불러오기
+        yield return StartCoroutine(LoadResultImage(result));
+
+        if (resultImage != null)
+            resultImage.gameObject.SetActive(true);
 
         yield return StartCoroutine(ShowRevealCard());
 
@@ -198,6 +205,13 @@ public class CraftRevealSequenceUI : MonoBehaviour
         {
             revealCardGroup.alpha = 0f;
             revealCardGroup.transform.localScale = Vector3.one * 0.8f;
+        }
+
+        if (resultImage != null)
+        {
+            resultImage.gameObject.SetActive(false);
+            resultImage.sprite = defaultResultSprite;
+            resultImage.color = Color.white;
         }
 
         if (revealHintText != null)

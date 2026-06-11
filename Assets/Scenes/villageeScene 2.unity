@@ -33761,7 +33761,7 @@ MonoBehaviour:
   craftBGM: {fileID: 8300000, guid: 99c5a97fafabf4ea1bd3617eefcc917a, type: 3}
   sellBGM: {fileID: 8300000, guid: 9fd5925d407e64b3d8fad7890251568b, type: 3}
   defaultBGM: {fileID: 8300000, guid: 559f9bdf0cec8418abbacbffb0d5ad8d, type: 3}
-  masterVolume: 0.5
+  masterVolume: 0.26
   fadeTime: 1
 --- !u!4 &989751743
 Transform:
@@ -76126,7 +76126,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3eebc49e8163bb8409cd81c430643b4c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NPCServerManager
-  baseUrl: https://unfocusedly-pleurocarpous-gina.ngrok-free.dev
+  baseUrl: https://practitioner-productivity-reduction-manufacturer.trycloudflare.com
   useApiManagerBaseUrl: 1
   npcListPath: /explore/npcs
   npcTalkPathFormat: /explore/action
@@ -76149,11 +76149,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fcef260336f5db74ea175a81d79d45a9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ApiManager
-  serverTarget: 2
-  cloudflareBaseUrl: https://unfocusedly-pleurocarpous-gina.ngrok-free.dev
+  serverTarget: 0
+  cloudflareBaseUrl: https://practitioner-productivity-reduction-manufacturer.trycloudflare.com
   localBaseUrl: http://127.0.0.1:8000
-  customBaseUrl: https://unfocusedly-pleurocarpous-gina.ngrok-free.dev
-  baseUrl: https://unfocusedly-pleurocarpous-gina.ngrok-free.dev
+  customBaseUrl: https://practitioner-productivity-reduction-manufacturer.trycloudflare.com
+  baseUrl: https://practitioner-productivity-reduction-manufacturer.trycloudflare.com
   isServerConnected: 0
   lastResponseCode: 0
   lastError: 
@@ -89429,7 +89429,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 0}
-  m_AnchoredPosition: {x: 2, y: -117}
+  m_AnchoredPosition: {x: -3, y: 274}
   m_SizeDelta: {x: -50, y: 120}
   m_Pivot: {x: 0.5, y: 0}
 --- !u!114 &2059673073
