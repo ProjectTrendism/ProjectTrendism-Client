@@ -53680,7 +53680,7 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 898269352}
   m_HandleRect: {fileID: 898269351}
   m_Direction: 2
-  m_Value: 0
+  m_Value: 1
   m_Size: 1
   m_NumberOfSteps: 0
   m_OnValueChanged:
@@ -76126,7 +76126,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3eebc49e8163bb8409cd81c430643b4c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NPCServerManager
-  baseUrl: https://practitioner-productivity-reduction-manufacturer.trycloudflare.com
+  baseUrl: https://theta-sig-suggestions-oxide.trycloudflare.com
   useApiManagerBaseUrl: 1
   npcListPath: /explore/npcs
   npcTalkPathFormat: /explore/action
@@ -76150,10 +76150,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ApiManager
   serverTarget: 0
-  cloudflareBaseUrl: https://practitioner-productivity-reduction-manufacturer.trycloudflare.com
+  cloudflareBaseUrl: https://theta-sig-suggestions-oxide.trycloudflare.com
   localBaseUrl: http://127.0.0.1:8000
-  customBaseUrl: https://practitioner-productivity-reduction-manufacturer.trycloudflare.com
-  baseUrl: https://practitioner-productivity-reduction-manufacturer.trycloudflare.com
+  customBaseUrl: https://theta-sig-suggestions-oxide.trycloudflare.com
+  baseUrl: https://theta-sig-suggestions-oxide.trycloudflare.com
   isServerConnected: 0
   lastResponseCode: 0
   lastError: 
